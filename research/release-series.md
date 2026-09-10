@@ -6,7 +6,8 @@ Protecting Your Energy is released as a sequence of reviewed boundaries:
 2. private dogfood and evaluation;
 3. sponsor preview when access terms are ready;
 4. public documentation and portfolio narrative;
-5. public core or general release after a separate owner decision.
+5. results-led brand and portfolio distribution: GitHub narrative, owned-site case study, Medium or publication draft, developer-community adaptation, and sponsor update;
+6. public core or general release after a separate owner decision.
 
 Every stage shares one revision, claim ledger, privacy review, and rollback
 reference. The marketing surface is an integration layer over the reviewed

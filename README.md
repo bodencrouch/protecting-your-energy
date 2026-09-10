@@ -46,3 +46,12 @@ and future Medium, developer-community, owned-site, or sponsor updates must
 use the same release revision and evidence boundary. Draft generation can be
 automated; publication stays an explicit owner decision. Private traces and
 unreleased implementation details never enter public marketing artifacts.
+
+## The WXYZ model
+
+- **W — raw human signal:** emotion, impatience, status protection, indirectness, or uncertainty.
+- **X — visible friction:** the communication pattern that wastes attention or weakens cooperation.
+- **Y — protected method:** internal heuristics, prompt architecture, evaluation, and implementation details. Treat this as IP; disclose capabilities and evidence before reproducible internals.
+- **Z — public result:** clearer decisions, completed work, credibility, trust, reputation, and authority earned through outcomes.
+
+The series publishes Z and bounded explanations of Y. It protects legitimate IP without manufacturing dependence, concealing material limitations, or turning partial disclosures into bait. Each stage must deliver useful, honest value.
