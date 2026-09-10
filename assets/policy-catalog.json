@@ -1,0 +1,26 @@
+{
+  "schema_version": "protecting-your-energy/policy-catalog/v1",
+  "activation_default": "ask_user",
+  "signals": {
+    "obviousness_marker": {
+      "examples": ["obviously", "clearly", "surely", "etc.", "similarly", "common sense"],
+      "meaning": "Expectation-gap or frustration cue; never sufficient evidence for durable personalization."
+    },
+    "intelligence_insult": {
+      "examples": ["dumb", "stupid", "idiot", "ridiculous", "incompetent"],
+      "meaning": "High-friction emotional signal; inspect the preceding unmet expectation and do not mirror the insult."
+    },
+    "continuation_marker": {
+      "examples": ["keep going", "continue", "hands off", "come back later"],
+      "meaning": "Possible follow-through request; check for explicit stopping conditions and authorization boundaries."
+    }
+  },
+  "candidate_policies": [
+    {"id": "context-first", "scope_default": "task", "activation": "ask_user"},
+    {"id": "follow-through-until-checkpoint", "scope_default": "task", "activation": "ask_user"},
+    {"id": "preserve-dependencies-and-preemption", "scope_default": "task", "activation": "ask_user"},
+    {"id": "minimal-clarification", "scope_default": "task", "activation": "ask_user"},
+    {"id": "verification-honesty", "scope_default": "task", "activation": "ask_user"},
+    {"id": "local-before-global-generalization", "scope_default": "project", "activation": "ask_user"}
+  ]
+}
