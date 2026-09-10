@@ -30,3 +30,19 @@ python3 scripts/analyze_energy_friction.py /path/to/boden_wizard_chat_context --
 ```
 
 All policy candidates default to `activation: ask_user`.
+
+## Release series
+
+The plugin is one part of a staged integration series:
+
+```text
+archive signals -> self-evaluation -> opt-in policy proposals
+                -> reviewed plugin revision -> docs/portfolio narrative
+                -> channel-specific drafts -> approved publication
+```
+
+The research scanner, self-evaluation skill, policy catalog, plugin behavior,
+and future Medium, developer-community, owned-site, or sponsor updates must
+use the same release revision and evidence boundary. Draft generation can be
+automated; publication stays an explicit owner decision. Private traces and
+unreleased implementation details never enter public marketing artifacts.
