@@ -40,6 +40,8 @@ Expand the vocabulary with spelling variants, old/new project names, acronyms, r
 
 Use more than one retrieval path:
 
+- when the user names a person, inspect person-specific DM/channel exports before any archive-wide scan;
+
 - enumerate AI partitions from `ai-conversations/catalog/upar-ai-platforms.json` and add Discord;
 - use `decade-map.py` only for broad cross-year/project orientation;
 - use the read-only Parquet query tool at `/home/brunner56/brain-data/upar-dip/tooling/retrieval/query_sql.py` for fast message-level candidate IDs when its derived data is current enough;
@@ -48,6 +50,8 @@ Use more than one retrieval path:
 - when current agent transcripts may not yet be archived, delegate to `agent-prompt-history-searcher` if available.
 
 Maintain a query ledger with query, source surface, hit count, and new conversation clusters found. Continue query expansion until two consecutive rounds add no materially new cluster.
+
+Bound every retrieval command and record progress after each source or platform partition. Never use a recursive whole-tree search or follow archive symlinks. If the allotted investigation time expires, stop cleanly and return the best hydrated evidence found so far with exact completed and unsearched coverage; a labeled partial result is preferable to an invocation that never returns.
 
 Top-k semantic results, `decade-map`, `ai-conversations/`, and stale Parquet are candidate locators. They never establish complete coverage. The final pass must stream every relevant canonical UPAR platform partition and test the complete query family against each message. Deduplicate by `(record_id, message_id)` or `(record_id, message_index)`.
 
