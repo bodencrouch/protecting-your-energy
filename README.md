@@ -17,6 +17,10 @@ The plugin proposes small, scoped policies and asks before applying them. It doe
 - `protecting-your-energy`: identify friction and propose opt-in energy-saving behavior.
 - `self-evaluation`: separate outcome evaluation from automatic policy activation.
 
+## Included subagent
+
+- `context-reconstruction-specialist`: retrieves prior AI or Discord conversation evidence and turns it into a focused transcript, context brief, evidence ledger, or ready-to-send DM.
+
 ## Privacy
 
 Private conversation archives, raw evidence, source paths, identities, credentials, and third-party details are intentionally excluded. The research memo contains generalized findings only.

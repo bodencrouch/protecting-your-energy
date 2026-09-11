@@ -7,3 +7,4 @@ venv/
 *.log
 reports/local/
 research/raw/
+private/
