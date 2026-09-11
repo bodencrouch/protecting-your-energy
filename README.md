@@ -19,7 +19,7 @@ The plugin proposes small, scoped policies and asks before applying them. It doe
 
 ## Included subagent
 
-- `context-reconstruction-specialist`: retrieves prior AI or Discord conversation evidence and turns it into a focused transcript, context brief, evidence ledger, or ready-to-send DM.
+- `archive-topic-investigator`: searches the complete local conversation archive for every prior discussion of a topic, consolidates distinct threads, and compiles only the context needed for the user's current DM, brief, or transcript.
 
 ## Privacy
 
