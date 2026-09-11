@@ -43,6 +43,8 @@ Offer these as suggestions, never silent defaults:
 
 ## Response format
 
+Use this diagnostic format only when the user asks to evaluate or persist an energy-saving policy. If frustration concerns a missing in-scope deliverable, complete that deliverable first and do not replace it with policy discussion.
+
 When the user signals energy loss, use:
 
 ```text

@@ -20,7 +20,7 @@ The plugin proposes small, scoped policies and asks before applying them. It doe
 
 ## Included subagent
 
-- `archive-topic-investigator`: searches the complete local conversation archive for every prior discussion of a topic, consolidates distinct threads, and compiles only the context needed for the user's current DM, brief, or transcript.
+- `archive-topic-investigator`: searches the complete local conversation archive, consolidates distinct threads, and turns the relevant history into the requested artifact. For a live DM, it returns only the next paste-ready message written as the user.
 - `remote-io-offload-operator`: operates remote staging, execution, output retrieval, and failover without adding infrastructure concerns to the archive investigator.
 
 ## Privacy

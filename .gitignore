@@ -8,3 +8,5 @@ venv/
 reports/local/
 research/raw/
 private/
+.plugin-eval/runs/
+.plugin-eval/benchmark-usage.jsonl

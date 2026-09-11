@@ -1,6 +1,6 @@
 {
   "name": "protecting-your-energy",
-  "version": "0.2.0+codex.20260910203500",
+  "version": "0.2.1+codex.20260910205000",
   "description": "Protecting Your Energy helps AI users spend less attention repairing avoidable agent mistakes, while keeping every personalization rule opt-in.",
   "author": {
     "name": "Local developer"
@@ -13,6 +13,8 @@
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Review this task for avoidable user effort, propose only the smallest opt-in energy-saving policies, and ask before applying any learned preference."
+    "defaultPrompt": [
+      "Finish the requested deliverable. Suggest opt-in effort-saving policies only when asked."
+    ]
   }
 }

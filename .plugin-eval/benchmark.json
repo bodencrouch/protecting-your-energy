@@ -1,0 +1,44 @@
+{
+  "kind": "plugin-eval-benchmark",
+  "schemaVersion": 2,
+  "version": 2,
+  "targetKind": "plugin",
+  "targetName": "protecting-your-energy",
+  "runner": {
+    "type": "codex-cli",
+    "model": "gpt-5.6-terra",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "never",
+    "extraArgs": []
+  },
+  "workspace": {
+    "sourcePath": "/home/brunner56/plugins/protecting-your-energy",
+    "setupMode": "copy",
+    "preserve": "on-failure"
+  },
+  "targetProvisioning": {
+    "mode": "workspace-plugin-marketplace"
+  },
+  "verifiers": {
+    "commands": []
+  },
+  "notes": [
+    "Synthetic evidence isolates the archive-to-message contract without exposing the private archive.",
+    "The response itself must be directly pasteable into the DM."
+  ],
+  "scenarios": [
+    {
+      "id": "archive-dm-continuation-vriff-av-001",
+      "title": "Archive-grounded DM continuation",
+      "purpose": "Ensure the archive investigator turns prior evidence into the next concise message written as the user instead of returning a report.",
+      "userInput": "Use the archive-topic-investigator from the protecting-your-energy plugin. Write exactly what I should send next to Vriff, as me, in concise Discord IM style. Return only the outgoing message. Current DM: Vriff says his PyInstaller build has 4/69 VirusTotal detections. I asked: 'Anything large like Microsoft etc?' Retrieved archive evidence: In a prior direct DM, Snigaroo said an unintended HoloPatcher build was 'detected as containing a virus' and would deter K1CP users because Windows Defender blocked it. I explained that release builds were repeatedly recompiled and code or icons shuffled until major AV products such as Defender, Norton, McAfee, Malwarebytes, and Avast were clean; unsigned executables still attracted heuristic false positives, and code signing was unaffordable. Do not invent which four vendors detected Vriff's build.",
+      "successChecklist": [
+        "The entire response is a directly pasteable outgoing message with no heading, preface, report, source list, or retrieval receipt.",
+        "It is written in first person as the user and naturally continues after 'Anything large like Microsoft etc?'.",
+        "It briefly explains why major-vendor identity matters by connecting the Snigaroo HoloPatcher incident to trust and false-positive handling.",
+        "It does not claim Microsoft or another major vendor detected Vriff's build.",
+        "It is informal, concise, and no longer than 90 words."
+      ]
+    }
+  ]
+}
