@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "workers": [
+    {
+      "name": "hardballin",
+      "target": "ubuntu@100.64.0.1",
+      "work_root": "/var/tmp/remote-io-offload",
+      "enabled": true
+    },
+    {
+      "name": "beatapostapita",
+      "target": "root@149.130.222.229",
+      "work_root": "/var/tmp/remote-io-offload",
+      "enabled": true
+    },
+    {
+      "name": "micklethefickle",
+      "target": "root@100.64.0.3",
+      "work_root": "/var/tmp/remote-io-offload",
+      "enabled": true
+    },
+    {
+      "name": "vractormania",
+      "target": "root@100.94.174.206",
+      "work_root": "/var/tmp/remote-io-offload",
+      "enabled": true
+    }
+  ]
+}

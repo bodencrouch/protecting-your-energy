@@ -16,10 +16,12 @@ The plugin proposes small, scoped policies and asks before applying them. It doe
 
 - `protecting-your-energy`: identify friction and propose opt-in energy-saving behavior.
 - `self-evaluation`: separate outcome evaluation from automatic policy activation.
+- `remote-io-offload`: stage I/O-heavy batch work on healthy self-hosted VPS workers with replica-aware failover and receipts.
 
 ## Included subagent
 
 - `archive-topic-investigator`: searches the complete local conversation archive for every prior discussion of a topic, consolidates distinct threads, and compiles only the context needed for the user's current DM, brief, or transcript.
+- `remote-io-offload-operator`: operates remote staging, execution, output retrieval, and failover without adding infrastructure concerns to the archive investigator.
 
 ## Privacy
 
