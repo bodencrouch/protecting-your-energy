@@ -29,8 +29,12 @@ design can extend beyond the historical mechanism; retain its source basis and
 identify the continuation privately.
 
 Make the intervention concrete: input, trigger, permitted action, useful result,
-how a correction changes it and when it stops or falls back. Reuse active jobs
-and supported scheduling. Respect project-specific constraints and actual
+how a correction changes it and when it stops or falls back.
+Name the smallest adequate permitted observation that demonstrates the result
+before implementation. For a retrieval route, a source lead must carry through
+original reading into the useful artifact; a capability response alone is not
+that result. Preserve wider completion requirements.
+Reuse active jobs and supported scheduling. Respect project-specific constraints and actual
 publication, sending and destructive-action boundaries. The current request can
 already authorize automation; do not restart a permission questionnaire.
 
