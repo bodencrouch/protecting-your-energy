@@ -1,51 +1,37 @@
 ---
 name: self-evaluation
-description: Evaluate whether an agent response reduced or increased user effort using observable evidence, without converting the evaluation into an automatic personalization rule.
+description: Evaluate a skill or agent outcome against a specific user problem using observable behavior, requirements, corrections and operating limits. Use for requested audits or targeted improvement after a concrete miss.
 ---
 
-# Self-Evaluation
+# Evaluate the outcome
 
-Use this as the plugin's evaluation layer. It is deliberately separate from policy activation: an agent may notice a failure without being allowed to rewrite its behavior.
+State the specific problem, intended artifact and applicable requirements.
+Separate what was available, the action taken, the user repair required and the
+observed result. Read sources and actual outputs; do not infer success from
+activity, syntax, model agreement, silence or a completion claim.
 
-## Evaluate the interaction
+Measure relevant outcomes separately: material meaning retained, unsupported
+additions, omitted constraints, source/role integrity, useful timing, completed
+action, repeated questions and effort to resume. Distinguish instruction review,
+structural validity, a performed case, installed behavior, a recurring run and
+longitudinal owner acceptance.
 
-Record four states when available:
+For each evaluated capability, provide observed cases and requirement counts,
+concrete misses and what remains unmeasured. Use real denominators. Do not turn
+synthetic case success into an accuracy percentage for the owner's archive.
+Include ambiguous inputs, later corrections, same-topic decoys and contrary
+settings. Keep a subset separate from tuning and disclose when reruns were used
+to repair a known miss.
 
-1. **Available:** what the agent could know before acting.
-2. **Action:** what it actually did.
-3. **Repair:** what the user had to repeat, correct, or redirect.
-4. **Outcome:** what was observed and what remains unverified.
+An independent evaluator receives the skill, a realistic request and the minimum
+needed data. Keep expected answers private from the executor. Critique must name
+a source/tool/requirement discrepancy and the smallest useful correction;
+reflection without feedback is not verification. Recheck a change against the
+original evidence. Preserve a supported result when criticism supplies no
+better evidence.
 
-Score the episode on separate axes:
-
-- context retention;
-- useful initiative;
-- follow-through;
-- clarification quality;
-- verification honesty;
-- user steering burden;
-- authorization safety.
-
-Do not treat silence, abandonment, or a model's completion claim as positive evidence. Keep user preference evidence separate from proof that a candidate instruction improves outcomes.
-
-## Produce a candidate, not an automatic rule
-
-For each recurring episode, write:
-
-```yaml
-failure_mode: <premature_stop|missing_follow_through|unnecessary_clarification|lost_context|overbroad_plan|verification_gap|other>
-available_before_action: <yes|partial|no|unknown>
-smallest_prevention: <one conditional behavior>
-destination: <session_override|user_preference|project_fact|procedural_skill|runtime_check|no_new_memory>
-scope: <turn|task|project|global|unresolved>
-evidence: [<source references>]
-counterexamples: [<cases where the rule should not apply>]
-confidence_basis: <evidence summary, not a model probability>
-activation: ask_user
-```
-
-The default activation value is always `ask_user`. A candidate can be proposed repeatedly, but it must not be applied across tasks until the user chooses its scope.
-
-## Acceptance criteria
-
-An evaluation is useful only when it names the actual burden, preserves the relevant context, distinguishes a missing capability from a missing instruction, and states how the proposed change will be checked later.
+Current requested repairs can be made within their authorized scope. A newly
+inferred rule outside that scope remains a candidate: record its source, scope,
+counterexamples and check before promotion. Do not silently edit global memory,
+rewrite the owner or replace a missing deliverable with a policy conversation.
+Keep evaluation machinery and personal evidence out of outward-facing products.

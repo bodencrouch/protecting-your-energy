@@ -1,63 +1,62 @@
-# Protecting Your Energy
+# Protect Your Energy
 
-Protecting Your Energy is a consent-first Codex plugin for reducing the attention users lose to avoidable AI-agent friction.
+Turn accumulated thinking into the useful next result.
 
-It helps identify recurring problems such as:
-
-- asking for information that was already available in context;
-- stopping after a plan or partial action instead of reaching the requested checkpoint;
-- losing task dependencies or confusing continuation with preemption;
-- reporting activity as if it were verified completion;
-- turning a local correction into an unjustified global preference.
-
-The plugin proposes small, scoped policies and asks before applying them. It does not silently personalize behavior. The archive scanner is read-only and emits counts and generalized signal metadata rather than conversation bodies.
-
-## Included skills
-
-- `protecting-your-energy`: identify friction and propose opt-in energy-saving behavior.
-- `self-evaluation`: separate outcome evaluation from automatic policy activation.
-- `remote-io-offload`: stage I/O-heavy batch work on healthy self-hosted VPS workers with replica-aware failover and receipts.
-
-## Included subagent
-
-- `archive-topic-investigator`: searches the complete local conversation archive, consolidates distinct threads, and turns the relevant history into the requested artifact. For a live DM, it returns only the next paste-ready message written as the user.
-- `remote-io-offload-operator`: operates remote staging, execution, output retrieval, and failover without adding infrastructure concerns to the archive investigator.
-
-## Privacy
-
-Private conversation archives, raw evidence, source paths, identities, credentials, and third-party details are intentionally excluded. The research memo contains generalized findings only.
-
-## Local development
-
-Run the scanner against a local archive:
-
-```bash
-python3 scripts/analyze_energy_friction.py /path/to/boden_wizard_chat_context --json
-```
-
-All policy candidates default to `activation: ask_user`.
-
-## Release series
-
-The plugin is one part of a staged integration series:
+Say what you are trying to do, paste a rough thought, or ask what to work on next.
+The agent recovers the context that changes its meaning, completes the relevant
+artifact and keeps a clear place to resume.
 
 ```text
-archive signals -> self-evaluation -> opt-in policy proposals
-                -> reviewed plugin revision -> docs/portfolio narrative
-                -> channel-specific drafts -> approved publication
+$protect-your-energy <what you are trying to do>
 ```
 
-The research scanner, self-evaluation skill, policy catalog, plugin behavior,
-and future Medium, developer-community, owned-site, or sponsor updates must
-use the same release revision and evidence boundary. Draft generation can be
-automated; publication stays an explicit owner decision. Private traces and
-unreleased implementation details never enter public marketing artifacts.
+Ordinary requests work too. You do not need to choose a skill or prepare keywords.
 
-## The WXYZ model
+## Capabilities
 
-- **W — raw human signal:** emotion, impatience, status protection, indirectness, or uncertainty.
-- **X — visible friction:** the communication pattern that wastes attention or weakens cooperation.
-- **Y — protected method:** internal heuristics, prompt architecture, evaluation, and implementation details. Treat this as IP; disclose capabilities and evidence before reproducible internals.
-- **Z — public result:** clearer decisions, completed work, credibility, trust, reputation, and authority earned through outcomes.
+- `reasoning-map`: recover implicit goals, causal connections and reusable methods.
+- `choose-next`: select a useful action from goals, readiness and remaining effort.
+- `finish-loop`: reassess expanding work and preserve the requested result.
+- `recurring-friction`: implement reusable relief for evidenced repeated obstacles.
+- `opportunity-radar`: connect verified developments to earlier ideas and readiness.
+- `self-evaluation`: assess actual outcomes against the specific problem.
 
-The series publishes Z and bounded explanations of Y. It protects legitimate IP without manufacturing dependence, concealing material limitations, or turning partial disclosures into bait. Each stage must deliver useful, honest value.
+The short `protect-your-energy` adapter and `protecting-your-energy` router share
+one implementation. Idea reconstruction uses the separate Thought Reconstruction
+plugin. Coherent expression and timely replies use Semantic Expression's
+`make-coherent` and `contextual-reply`. The existing archive investigator and
+remote I/O capability remain available for their relevant work.
+
+## Continuity
+
+The optional `scripts/energy_state.py` retains private method, idea, task,
+decision, correction, opportunity and run records. Updates preserve previous
+versions and use locked atomic replacement. The current agent uses available
+archive tools and original-source checks; examples and personal evidence stay
+outside plugin source. A repeated message can signal invested reasoning or a
+needed repair. It does not automatically establish truth or today's priority.
+
+[Archive access](references/archive-access.md) provides shared source and retrieval
+routes for delegated tasks. Access receipts distinguish model-based semantic
+search, lexical discovery and unavailable indexes. Source context remains
+available even when an optional index is guarded or slow.
+
+Requested reversible assistance proceeds within its scope. A newly inferred
+policy outside that request remains a scoped proposal. Publication, sending,
+external changes and project-specific constraints retain their own boundaries.
+
+## Evidence
+
+The general procedure draws on personal-example retrieval, discourse grounding,
+source faithfulness, observable critique, interruption timing and remaining-effort
+reassessment. See [methods](references/methods.md). Their component evidence does
+not establish complete personal understanding or future success.
+
+Structural validation, performed source cases, installed discovery, recurring
+execution and owner acceptance are separate results. Private evaluation and
+source receipts retain those distinctions. Public-facing artifacts contain the
+context needed for their purpose and preserve material limitations.
+
+The original WXYZ work remains in `research/`: observed signal, interaction cost,
+protected method and useful result. The broader workflow now acts on the user's
+requested outcome, while preserving privacy and easy correction.
