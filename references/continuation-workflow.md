@@ -26,6 +26,12 @@ saved artifact/accounts with their original qualifications, and only the selecte
 source units. Existing text/path/actor/media/table references are resolved into
 self-contained source bundles in RAM. Unselected units, unrelated leads and
 generated prior interpretations are excluded from the writer source bundle.
+Configured [native source bookmarks](native-context.md) are authenticated and
+hydrated separately into RAM for applicability, writing, revision and criticism.
+They establish the exact bookmarked input snapshot, not newer input or adoption
+of every expression. Current caller changes keep precedence. If required original
+records are unavailable, the workflow returns without making native model calls.
+The output source receipt includes their coverage and row provenance without bodies.
 The critic can inspect the full original compiler context. Its runtime handle
 catalog identifies the current request, each current correction, available saved
 context, applicability, draft and exact available hydrated unit IDs. Native JSON

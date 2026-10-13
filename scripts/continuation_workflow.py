@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '576bda4c33c4c9e192f523dbe3fbed1e61e8f972cc5283b27b9b9827e13b5e6c'
+COMPILER_SHA = 'e01fc29bed81249357ab3f54d70ab7521319274e1a8b6c7c09c3b824b4b8da89'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072
@@ -59,8 +59,10 @@ for another person to produce it. Choose the domain/craft identified by applicab
 Respect the current requested local scope: produce a bounded useful first artifact,
 not an entire expanded project. Target an artifact under 16 KiB unless the current
 request explicitly requires a larger deliverable; the hard artifact cap remains 128 KiB.
-Use only supplied selected-unit source bundles for historical grounding. Current
-records, artifacts and accounts retain their stated proposal/interpretation status.
+Use supplied selected-unit source bundles and authenticated native source records
+for historical grounding, retaining their snapshot and authorship/adoption
+qualifications. Saved records, artifacts and accounts retain their stated
+proposal/interpretation status.
 Do not assert invented hard prerequisites, real-person motives, historical facts,
 acceptance, adoption or owner-settled requirements. Do not impose mandatory moral
 framing unsupported by the CURRENT purpose; morality is valid when actually requested.
@@ -250,6 +252,11 @@ def critic_handle_catalog(context, units, applicability=None, draft=None):
         if value is not None and (key != 'selected_artifact' or value.get('status') == 'read'):
             catalog[handle] = {'meaning': 'Saved qualified context; not new historical evidence',
                                'binding': 'context.' + key}
+    native = context.get('current_native_sources')
+    if isinstance(native, dict) and native.get('status') == 'read':
+        catalog['current-native-sources'] = {
+            'meaning': 'Authenticated bookmarked native inputs; snapshot, authorship and adoption limits apply',
+            'binding': 'context.current_native_sources'}
     if applicability is not None:
         catalog['applicability'] = {'meaning': 'Revisable applicability model decision', 'binding': 'applicability'}
     if draft is not None:
@@ -484,6 +491,11 @@ def run_workflow(args, compiler, invoke=native_call):
             or isinstance(native_timeout, bool) or not 1 <= native_timeout <= 600):
         raise WorkflowError('retrieval-or-native-deadline-outside-bounds')
     context = compiler.display_module()(compiler.compile_context(args))
+    native = context.get('current_native_sources', {})
+    native_receipt = {key: value for key, value in native.items() if key != 'records'}
+    native_receipt['record_sources'] = [
+        {key: row.get(key) for key in ('thread_id', 'message_id', 'timestamp', 'classification', 'source')}
+        for row in native.get('records', [])]
     packet, units = available_units(context)
     stages, latest, verdict = [], None, None
     decision = None
@@ -499,9 +511,13 @@ def run_workflow(args, compiler, invoke=native_call):
                                  'library_snapshot': packet.get('library_snapshot'),
                                  'context_view': packet.get('context_view'),
                                  'limitations': receipt_qualifications(packet, packet.get('limitations')),
+                                 'current_native_sources': native_receipt,
                                  'available_hydrated_unit_ids': list(units)}}
     if args.include_context:
         result['context'] = context
+    if native.get('configured') and native.get('status') != 'read':
+        result['error'] = 'required-current-original-sources-unavailable'
+        return result
 
     def call(stage, payload):
         if stage == 'critic':
@@ -530,7 +546,8 @@ def run_workflow(args, compiler, invoke=native_call):
             result['error'] = 'applicability-model-reported-blocker'
             return result
         bundle = source_bundle(packet, units, selected)
-        writer_data = {key: context.get(key) for key in ('current_request', 'current_record', 'selected_artifact', 'source_accounts')}
+        writer_data = {key: context.get(key) for key in ('current_request', 'current_record',
+                      'selected_artifact', 'source_accounts', 'current_native_sources')}
         writer_data.update(applicability=decision, selected_unit_sources=bundle,
                            grounding='Selected source units only; empty selection is a source-limited proposal.')
         latest = call('artifact', writer_data)

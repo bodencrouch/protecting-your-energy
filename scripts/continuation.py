@@ -23,6 +23,7 @@ DEFAULT_ROOT = Path.home() / 'brain-data/upar-dip/derived/protect-your-energy'
 CONFIG = DEFAULT_ROOT / 'config.json'
 RECLAIM = Path.home() / 'brain-data/upar-dip/tooling/thought-reconstruction/bin/thought-reconstruction'
 DISPLAY_SHA = '1b255b77c5e5c5043f04e73753abf5516e717633a7cb6d172d3d0a092e6706f5'
+NATIVE_CONTEXT_SHA = '224064965aed00cb6dec46aa3ba177a0f9a2b07986894075c9236a3b509576b8'
 BLOCKED = ('.sealed', '.sanitized', '.seal-', 'request-only', 'request_only',
            '.request-only', 'quarantine', 'credentials', '.staging')
 MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
@@ -53,6 +54,19 @@ def display_module():
     module = importlib.util.module_from_spec(spec)
     exec(compile(raw, str(path), 'exec'), module.__dict__)
     return module.sanitize_payload
+
+
+def native_sources_module():
+    path = Path(__file__).resolve().with_name('native_context.py')
+    if path.is_symlink() or path.resolve().parent != Path(__file__).resolve().parent:
+        raise ContextError('native-context-module-location-invalid')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != NATIVE_CONTEXT_SHA:
+        raise ContextError('native-context-module-hash-mismatch')
+    spec = importlib.util.spec_from_file_location('pye_native_context', path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module.load_current_sources
 
 
 def guarded(path):
@@ -722,6 +736,8 @@ def compile_context(args):
     if row is not None:
         current_record = bounded_record(row, selection['task_id'], state_receipt)
         artifact, accounts = derived_context(current_record['current'], root)
+    native_sources = native_sources_module()(
+        current_record['current'] if current_record else {}, root, read_source, guarded)
     substantive = bool(words(cue)) or bool(args.query) or bool(args.unit_id) or row is not None
     evidence = canonical_reclaim(cue, args.query, args.unit_id, args.timeout) if substantive else {
         'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
@@ -732,11 +748,13 @@ def compile_context(args):
                                 'corrections': current_corrections, 'corrections_storage': 'RAM-only'},
             'selection': selection, 'current_record': current_record,
             'selected_artifact': artifact, 'source_accounts': accounts,
+            'current_native_sources': native_sources,
             'canonical_evidence': evidence,
             'continuity_source': {'state': state_status, 'revision': state.get('revision'),
                                   'source': state_receipt, 'configuration': config_receipt},
             'qualifiers': ['Context only; no finished artifact or task completion established.',
                            'Current request and corrections remain separate from saved accounts and source facts.',
+                           'Native source records authenticate a bookmarked snapshot; newer inputs and adoption remain unverified.',
                            'Task selection is lexical and does not establish semantic applicability.',
                            'Saved artifact is a proposal; derived accounts are interpretations, not additional owner evidence.',
                            'Canonical packet retains attribution, coverage and limitations; retrieval is incomplete.',
