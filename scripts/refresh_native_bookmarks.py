@@ -236,11 +236,27 @@ def scan_thread(entry, native, compiler, deadline, budget):
         os.close(fd)
 
 
-def refresh(reference, threads, derived_root, deadline_seconds=90):
+def refresh(reference, threads, derived_root, deadline_seconds=90, *,
+            compiler_io=None, compiler_sha256=None):
     require(type(deadline_seconds) is int and 1 <= deadline_seconds <= 300,
             'refresh-deadline-invalid')
     native = pinned_module('pye_refresh_native', 'native_context.py', NATIVE_SHA)
-    compiler = pinned_module('pye_refresh_compiler', 'continuation.py', COMPILER_SHA)
+    if compiler_io is None:
+        require(compiler_sha256 is None, 'refresh-compiler-sha-requires-caller-io')
+        compiler = pinned_module('pye_refresh_compiler', 'continuation.py', COMPILER_SHA)
+        compiler_pin = COMPILER_SHA
+        compiler_verification = 'hash-pinned compiler source independently loaded by refresher'
+        compiler_verified = True
+    else:
+        require(isinstance(compiler_sha256, str) and native._SHA.fullmatch(compiler_sha256),
+                'refresh-caller-compiler-sha-invalid')
+        read_source = compiler_io.get('read_source') if isinstance(compiler_io, dict) else getattr(compiler_io, 'read_source', None)
+        guarded = compiler_io.get('guarded') if isinstance(compiler_io, dict) else getattr(compiler_io, 'guarded', None)
+        require(callable(read_source) and callable(guarded), 'refresh-caller-compiler-io-invalid')
+        compiler = types.SimpleNamespace(read_source=read_source, guarded=guarded)
+        compiler_pin = compiler_sha256
+        compiler_verification = 'caller-provided IO callbacks and asserted compiler SHA; compiler source not loaded or independently validated by refresher'
+        compiler_verified = False
     deadline = time.monotonic() + deadline_seconds
     require(isinstance(reference, dict) and isinstance(reference.get('path'), str)
             and isinstance(reference.get('sha256'), str) and native._SHA.fullmatch(reference['sha256']),
@@ -275,7 +291,9 @@ def refresh(reference, threads, derived_root, deadline_seconds=90):
                   'coverage_scope': 'all exact native user.text rows in selected captured complete prefixes',
                   'newer_human_inputs_may_exist': True, 'state_reference_switched': False,
                   'source_bodies_stored': False, 'native_module_sha256': NATIVE_SHA,
-                  'compiler_module_sha256': COMPILER_SHA,
+                  'compiler_module_sha256': compiler_pin,
+                  'compiler_io_verification': compiler_verification,
+                  'compiler_source_independently_verified_by_refresher': compiler_verified,
                   'limits': {'total_prefix_bytes': TOTAL_PREFIX_LIMIT,
                       'thread_prefix_bytes': THREAD_PREFIX_LIMIT, 'physical_row_bytes': SCAN_ROW_LIMIT,
                       'scan_records': SCAN_RECORD_LIMIT, 'user_records': native.RECORD_LIMIT,
@@ -326,11 +344,15 @@ def main():
     parser.add_argument('--thread', action='append', default=[], help='Select an authorized source thread.')
     parser.add_argument('--deadline', type=int, default=90, help='Bound capture time to 1–300 seconds.')
     parser.add_argument('--output', help='Create a new private metadata descriptor without overwriting.')
+    parser.add_argument('--compiler-sha256', help='Require this exact compiler source SHA after a compiler update.')
     args = parser.parse_args()
     try:
         require(1 <= args.deadline <= 300, 'refresh-deadline-invalid')
-        compiler = pinned_module('pye_refresh_cli', 'continuation.py', COMPILER_SHA)
         native = pinned_module('pye_refresh_cli_native', 'native_context.py', NATIVE_SHA)
+        compiler_pin = args.compiler_sha256 if args.compiler_sha256 is not None else COMPILER_SHA
+        require(isinstance(compiler_pin, str) and native._SHA.fullmatch(compiler_pin),
+                'refresh-cli-compiler-sha-invalid')
+        compiler = pinned_module('pye_refresh_cli', 'continuation.py', compiler_pin)
         root, state_path, _ = compiler.settings()
         if args.task_id:
             require(not args.bookmark and not args.sha256 and not args.thread,
@@ -342,7 +364,9 @@ def main():
             reference, threads = current.get('current_source_bookmarks'), current.get('source_threads')
         else:
             reference, threads = {'path': args.bookmark, 'sha256': args.sha256}, args.thread
-        _, raw = refresh(reference, threads, root, args.deadline)
+        kwargs = ({'compiler_io': compiler, 'compiler_sha256': compiler_pin}
+                  if args.compiler_sha256 is not None else {})
+        _, raw = refresh(reference, threads, root, args.deadline, **kwargs)
         if args.output:
             save_new(raw, args.output, root, compiler)
             print(json.dumps({'status': 'snapshot-captured', 'path': args.output,

@@ -17,6 +17,24 @@ decoding, first-header validation and exact native `user.text` classifier.
 Every previous selected row retains its exact identity, byte range, timestamp
 and raw hash. Missing, changed, overlapping or reclassified pins fail capture.
 
+The callable interface is
+`refresh(reference, threads, derived_root, deadline_seconds=90, *, compiler_io=None, compiler_sha256=None)`.
+An integrated caller can supply a dictionary or object containing callable
+`read_source` and `guarded` entries, plus its lowercase compiler SHA256. This
+route uses the caller's already loaded IO and never imports the compiler. Its
+receipt labels that SHA and IO as caller-provided, rather than independently
+loaded or source-validated by the refresher. Native-reader source remains pinned
+and checked in either route. No compiler settings or task-selection callback is
+required for this callable route.
+
+Without supplied IO, the callable and standalone CLI retain the exact legacy
+compiler pin. After a compiler update, standalone callers must pass
+`--compiler-sha256 SHA` matching that compiler's exact source bytes. The CLI
+hash-validates and loads that source before supplying its IO to the refresher;
+the receipt still distinguishes this caller loading from validation inside the
+refresher. Ordinary continuation integration supplies its loaded IO directly.
+The legacy pin is not automatically changed, avoiding a mutual source-hash cycle.
+
 Each selected log is opened without symlink traversal. Its initial size defines
 the captured prefix. The complete prefix is scanned as physical JSONL lines;
 each row is parsed without returning source bodies. User messages with the exact
