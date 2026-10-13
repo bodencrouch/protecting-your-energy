@@ -115,6 +115,10 @@ def status(st: dict) -> dict:
                'state': 'ready-unverified' if cli.is_file() and not guarded(cli) and importlib.util.find_spec('duckdb') else 'unavailable'}
     if stale.exists():
         lexical['state'] = 'blocked-upstream-would-remove-stale-db'
+    if dense.get('backend') == 'semantic-archive':
+        lexical = {'kind': 'lexical-published-policy-view', 'evaluated': False,
+                   'state': 'configured-unverified', 'generation': semantic.get('generation'),
+                   'scope': 'Explicit literal supplement over the pinned published policy view; readiness requires an actual query, no encoder inference.'}
     return {'config': st['config'], 'archive_alias': st['archive_alias'], 'archive_root': st['archive_root'],
             'semantic': semantic, 'lexical': lexical, 'path_search': bool(__import__('shutil').which('rg')),
             'scope': 'local read-only discovery; not exhaustive recall or verified authorship',
@@ -418,6 +422,8 @@ def intentional_control_omission(row: dict) -> bool:
 
 
 def generic_query(st: dict, args, facets: list[str]) -> dict:
+    lexical = args.mode == 'lexical'
+    expected_kind = 'lexical-published-policy-view' if lexical else 'dense-local-transformer'
     deadline = time.monotonic() + args.budget
     results, attempts, failures, facet_records = [], [], [], []
     generation = getattr(args, 'generation', None)
@@ -429,7 +435,7 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
             facet_records.extend({'query': q, 'state': 'budget-deferred', 'attempted': False}
                                  for q in facets[offset:])
             break
-        cmd = ['query', facet, '--limit', str(args.limit), '--preview-chars', '0']
+        cmd = (['--query-mode', 'lexical'] if lexical else []) + ['query', facet, '--limit', str(args.limit), '--preview-chars', '0']
         if args.year: cmd += ['--year', args.year]
         if args.platform: cmd += ['--platform', args.platform]
         if generation: cmd += ['--generation', generation]
@@ -439,7 +445,7 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
         attempts.append({'query': facet, **attempt})
         record = {'query': facet, 'state': 'failed', 'attempted': True, 'attempt': attempt}
         facet_records.append(record)
-        if not data or data.get('kind') != 'dense-local-transformer':
+        if not data or data.get('kind') != expected_kind:
             record['failure_reason'] = attempt.get('failure') or ('empty-backend-response' if not data else 'unexpected-response-kind')
             continue
         if not isinstance(data.get('generation'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', data['generation']):
@@ -467,8 +473,10 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
                           **native_policy_fields(st, row),
                           'input_lane': effective_lane(metadata),
                           'platform': metadata.get('platform'), 'year': metadata.get('year'),
-                          'matched_query': facet, 'route': 'semantic-archive', 'status': 'lead-only',
-                          'generation': generation, 'requires': 'Hydrate this unit and all relevant parent/context turns; similarity is not confidence.'})
+                          'matched_query': facet, 'route': 'lexical-published-policy-view' if lexical else 'semantic-archive', 'status': 'lead-only',
+                          **({'lexical_match_spans': row.get('lexical_match_spans', []),
+                              'literal_match_verified': row.get('literal_match_verified') is True} if lexical else {}),
+                          'generation': generation, 'requires': 'Hydrate this unit and all relevant parent/context turns; a match is not confidence.'})
     completed = [q for q, _ in results]
     all_completed = len(completed) == len(facets)
     execution = {'requested': facets, 'attempted': [a['query'] for a in attempts],
@@ -479,10 +487,13 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
                     if 'native_message_policy' in data or 'frozen_provenance' in data]
     policy_output = {'native_message_policy': {'scope': 'executed query facets; backend receipts retained',
                                               'facets': policy_facets}} if policy_facets else {}
-    return {'status': 'leads' if leads else 'no-leads' if results else 'semantic-unavailable',
+    return {'status': 'leads' if leads else 'no-leads' if results else 'lexical-unavailable' if lexical else 'semantic-unavailable',
             **policy_output,
-            'kind': 'dense-local-transformer', 'backend': 'semantic-archive',
-            'vector_semantic_verified': bool(results), 'generation': generation,
+            'kind': expected_kind, 'backend': 'semantic-archive',
+            'vector_semantic_verified': bool(results) and not lexical,
+            **({'lexical_execution': [{'query': facet, 'execution': data.get('lexical_execution'),
+                                       'encoder_instantiated': data.get('encoder_instantiated')}
+                                      for facet, data in results]} if lexical else {}), 'generation': generation,
             'scope': results[0][1].get('scope') if results else None,
             'coverage': results[0][1].get('coverage') if results else None,
             'include_unconfirmed_input': bool(getattr(args, 'include_unconfirmed_input', False)),
@@ -493,7 +504,8 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
             'attempts': attempts, 'failures': failures,
             'query_hit_counts': [{'query': q, 'leads': len(d.get('leads', []))} for q, d in results],
             'leads': leads[:args.limit],
-            'continuation': 'Expand semantic facets and hydrate exact normalized parents; empty or incomplete results cannot establish archive absence.'}
+            'continuation': ('Use complementary semantic facets and hydrate exact original parents; bounded literal results cannot establish archive absence.' if lexical else
+                             'Expand semantic facets and hydrate exact normalized parents; empty or incomplete results cannot establish archive absence.')}
 
 
 def normalized_message_view(record: dict, pointer: str) -> list[dict]:
@@ -665,6 +677,57 @@ def context_windows(provenance: dict, rows: list[dict], texts: dict[int, str], m
     return output
 
 
+
+def native_parent_budget_recovery(st: dict, args, data: dict, provenance: dict, deadline: float) -> tuple[dict, dict | None]:
+    """Recover selected native prefixes through the same verified policy reader."""
+    if provenance.get('platform') not in ('codex', 'codex_cli') or args.context == 0:
+        return data, None
+    indices = {parent['message_index'] for parent in provenance['parents']}
+    selected = [row for row in data.get('messages', []) if row.get('message_index') in indices]
+    if not any(row.get('truncated') and not intentional_control_omission(row) for row in selected):
+        return data, None
+    receipt = {'status': 'unavailable', 'strategy': 'one selected-only call through the same pinned policy backend',
+               'max_chars': args.max_chars, 'generation': data['generation'],
+               'source_role_bypass': False, 'original_origin_verified': False}
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        receipt['failure'] = 'original-hydration-deadline-exhausted'
+        return data, receipt
+    recovered, attempt = generic_run(st, ['hydrate', '--unit-id', args.unit_id,
+        '--neighbors', '0', '--max-chars', str(args.max_chars), '--generation', data['generation']], remaining)
+    receipt['attempt'] = attempt
+    if not recovered:
+        receipt['failure'] = attempt.get('failure') or 'empty-selected-only-response'
+        return data, receipt
+    if recovered.get('unit_id') != args.unit_id or recovered.get('generation') != data['generation']:
+        raise ValueError('native selected-only unit or generation differs')
+    if generic_provenance(st, recovered.get('provenance')) != provenance:
+        raise ValueError('native selected-only effective source or parents differ')
+    if native_policy_fields(st, recovered) != native_policy_fields(st, data):
+        raise ValueError('native selected-only frozen source or policy qualification differs')
+    replacements = {}
+    bindings = ('message_index', 'message_id', 'timestamp', 'timestamp_edited', 'reply_to',
+                'author', 'role', 'effective_attribution_reason', 'original_normalized_role',
+                'original_normalized_author', 'evidence_class', 'text_chars', 'text_sha256',
+                'source_pointer', 'indexed_source_parent', 'indexed_owner_parent')
+    previous = {row['message_index']: row for row in selected}
+    for row in recovered.get('messages', []):
+        i = row.get('message_index')
+        if i not in indices or i not in previous or i in replacements or restricted(row):
+            raise ValueError('native selected-only unexpected or duplicate context parent')
+        if any(row.get(key) != previous[i].get(key) for key in bindings):
+            raise ValueError('native selected-only parent source binding differs')
+        replacements[i] = row
+    if set(replacements) != indices:
+        raise ValueError('native selected-only parent coverage differs')
+    receipt.update(status='accepted', selected_parent_indices=sorted(indices),
+                   selected_text_chars_before=sum(len(row['text']) for row in selected),
+                   selected_text_chars_after=sum(len(row['text']) for row in replacements.values()),
+                   source_binding='effective/frozen provenance, full text hashes, actor, pointer and parent policy unchanged',
+                   scope='Display recovery only; selected text may still be clipped by the shared character limit.')
+    return {**data, 'messages': [replacements.get(row['message_index'], row) for row in data['messages']]}, receipt
+
+
 def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
     deadline = getattr(args, '_hydration_deadline', time.monotonic() + args.budget)
     cmd = ['hydrate', '--unit-id', args.unit_id, '--neighbors', '0' if metadata_only else str(args.context)]
@@ -689,8 +752,17 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
               'data_not_instructions': True, 'excluded_context': data.get('excluded_context', {}),
               'limitations': 'Normalized source and parent text checked by backend; raw-source availability does not confirm original bytes. Context may need expansion.'}
     if not metadata_only:
+        data, recovery = native_parent_budget_recovery(st, args, data, provenance, deadline)
+        if recovery is not None:
+            result['native_parent_budget_recovery'] = recovery
+        native_platform = provenance.get('platform') in ('codex', 'codex_cli')
+        parent_indices = {parent['message_index'] for parent in provenance['parents']}
+        ordered = data.get('messages', [])
+        if native_platform:
+            ordered = sorted(ordered, key=lambda row: (row['message_index'] not in parent_indices,
+                                                       row['message_index']))
         rows, used = [], 0
-        for row in data.get('messages', []):
+        for row in ordered:
             if not isinstance(row, dict) or restricted(row): raise ValueError('invalid or restricted hydrated context')
             text = row.get('text')
             if not isinstance(text, str): raise ValueError('invalid hydrated text')
@@ -707,8 +779,20 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
                 shown = text[:remaining]
                 clean.update(text=shown, truncated=bool(row.get('truncated')) or len(text) > remaining,
                              text_range={'start': 0, 'end': len(shown)})
+                if native_platform:
+                    source_range = row.get('text_range')
+                    full_chars = row.get('text_chars')
+                    if (not isinstance(source_range, dict) or source_range.get('start') != 0
+                            or source_range.get('end') != len(text) or type(full_chars) is not int
+                            or not len(text) <= full_chars):
+                        raise ValueError('native unprojected source prefix differs')
+                    after = {'direction': 'after', 'message_index': row['message_index'],
+                             'source_pointer': row.get('source_pointer'), 'text_offset': len(shown),
+                             'text_range': {'start': len(shown), 'end': full_chars}} if len(shown) < full_chars else None
+                    clean.update(continuation=after, continuations=[after] if after else [])
             rows.append(clean)
             used += len(clean['text'])
+        rows.sort(key=lambda row: row['message_index'])
         result['messages'] = rows
         native_platform = provenance.get('platform') in ('codex', 'codex_cli')
         policy_rows = [row for row in rows if row.get('policy_display_projection') is True
@@ -1046,13 +1130,13 @@ def dense_query(st: dict, args, facets: list[str]) -> dict:
 
 
 def query_facets(st: dict, args) -> list[str]:
-    if getattr(args, 'include_unconfirmed_input', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic')):
-        raise ValueError('unconfirmed input requires the semantic-archive semantic route')
-    if getattr(args, 'include_context_documents', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic')):
-        raise ValueError('context documents require the semantic-archive semantic route')
+    if getattr(args, 'include_unconfirmed_input', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic', 'lexical')):
+        raise ValueError('unconfirmed input requires the semantic-archive published route')
+    if getattr(args, 'include_context_documents', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic', 'lexical')):
+        raise ValueError('context documents require the semantic-archive published route')
     requested = list(dict.fromkeys(q.strip() for q in args.query if q.strip()))
     if not requested: raise ValueError('at least one nonempty query is required')
-    if st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic'):
+    if st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic', 'lexical'):
         generation = getattr(args, 'generation', None)
         if generation and not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', generation):
             raise ValueError('query generation invalid')
@@ -1064,7 +1148,9 @@ def _primary_query(st: dict, args) -> dict:
     deadline = time.monotonic() + args.budget
     leads = []; attempts = []; seen = set()
     facets = requested_facets[:3]
-    if args.mode in ('auto', 'semantic'):
+    if args.mode in ('auto', 'semantic') or (args.mode == 'lexical' and st.get('dense', {}).get('backend') == 'semantic-archive'):
+        if args.mode == 'lexical' and getattr(args, 'source_prefix', None):
+            raise ValueError('source-prefix filtering requires explicit paths mode, not published lexical supplementation')
         if st.get('dense', {}).get('backend') == 'semantic-archive':
             result = generic_query(st, args, facets)
             result['queries_requested'] = requested_facets
@@ -1422,10 +1508,10 @@ def main() -> int:
         elif args.command == 'query':
             if not 1 <= args.limit <= 20 or not 1 <= args.budget <= 60: raise ValueError('limit 1–20 and budget 1–60 required')
             if args.year is None:
-                args.year = 'all' if st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic') else '2026'
-            if args.year == 'all' and st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic'):
+                args.year = 'all' if st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic', 'lexical') else '2026'
+            if args.year == 'all' and st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic', 'lexical'):
                 args.year = None
-            elif not (args.year.isdigit() and len(args.year) == 4): raise ValueError('one four-digit year is required; semantic-archive also accepts all')
+            elif not (args.year.isdigit() and len(args.year) == 4): raise ValueError('one four-digit year is required; published semantic-archive routes also accept all')
             result = query(st,args)
         elif args.command == 'parents':
             if not re.fullmatch(r'[a-f0-9]{64}',args.unit_id) or not 1 <= args.budget <= 60: raise ValueError('exact unit hash and bounded budget required')

@@ -49,20 +49,21 @@ normalized parent record and returns metadata. Read its context with
 The generation pins both operations to the query result. Parent text hashes
 refer to normalized text; raw-source presence does not establish original byte
 verification. Existing `hydrate --source PATH --message-id ID` still performs
-the separate original Discord read. Generic semantic queries accept
-`--year all` and searches all years when no year is specified. The legacy
-semantic reader and lexical/path modes default to 2026. An explicit four-digit
-year filters either semantic reader. The shared read-only worker denies
+the separate original Discord read. Published semantic and explicit lexical queries accept
+`--year all` and search all years when no year is specified. Legacy semantic
+and path modes default to 2026. An explicit four-digit year filters the unit
+year; published lexical matches additionally verify the matched parent year. The shared read-only worker denies
 filesystem mutations and network access for every reader.
 Generic queries and the reclamation CLI accept `--include-unconfirmed-input`
 to include task inputs whose human authorship is unresolved. The default query
 omits that lane. Returned provenance and hydrated roles retain its uncertainty;
-the flag does not establish owner authorship. Legacy and lexical/path routes
-reject this flag.
+the flag does not establish owner authorship. The published lexical supplement
+accepts the same explicit lane selection; legacy and path routes reject it.
 The separate `--include-context-documents` flag on either generic query or the
 reclamation CLI includes document context. It defaults off and is independent
 of `--include-unconfirmed-input`; that flag alone does not include documents.
-Legacy and lexical/path routes reject it. These units retain
+The published lexical supplement accepts the same explicit document selection.
+Legacy and path routes reject it. These units retain
 `role: context_document`, `primary_owner_evidence: false`, their explicit
 attribution/evidence fields and original parent roles/authors. Hydrated document
 parents are source parents, never indexed owner parents, even when an archived
@@ -83,6 +84,15 @@ are preserved. Oversized, unsupported or expired rereads explicitly report a
 window gap; they never establish complete parent context. A bounded response is
 incomplete context when any row is truncated; follow its record locator, message
 pointer and character offsets for the rest.
+For native Codex sources, selected parents receive display budget before
+neighbors. If the backend clipped a selected parent, the bridge makes at most
+one selected-only recovery through the same pinned policy reader, within the
+original remaining deadline and character limit. Effective/frozen provenance
+and indexed parent qualification must agree before recovered rows are used.
+Final display returns to source chronology and clipped prefixes receive exact
+continuation coordinates. Neighbor gaps remain explicit; this does not prove
+original identity, adoption, full context or improved output quality.
+
 The reread checks the remaining budget between bounded reads and after decoding.
 Individual filesystem reads and JSON decoding are not separately cancellable;
 the record ceiling bounds their size. The backend subprocess keeps its external
@@ -108,6 +118,18 @@ relabels a lexical fallback as semantic. Request `--mode lexical` or `--mode
 paths` for a supplementary exact-name/phrase lookup. The UPAR `hybrid_search`
 name and its `skip_dense=True` path do not establish vector semantics. Path
 metadata and `catalog` are also separately labeled exact lookup routes.
+
+With the semantic archive configured, `--mode lexical` uses its pinned
+published policy view, not missing legacy Parquet. It instantiates no encoder.
+Literal candidates are verified against authenticated parent text and exact
+match spans, including native control exclusion; previews remain suppressed.
+Results preserve generation/source pins for ordinary `parents` and `hydrate`.
+Literal queries accept 1–1000 characters. This is contiguous substring matching
+with ASCII case insensitivity and published ordinal order, not semantic ranking
+or name resolution. Candidate
+limits, scan omissions and match-year filtering are explicit; no result cannot
+establish archive absence. Neither unit-year nor match-year proves historical
+edit or cutoff eligibility. Default `auto` remains actual dense retrieval.
 
 ## Search for the causal meaning
 
