@@ -170,6 +170,29 @@ versions within the task budget; do not interpret the first four as all parents.
 
 ## Resolve the original and read the episode
 
+If the recorded Discord capture lacks a selected parent, resolve an exact
+alternate version with
+`~/brain-data/upar-dip/tooling/retrieval/discord_capture_resolver.py`.
+Its `resolve_original_parents(settings, verified_provenance)` API takes the
+output of the shared helper's `settings(config_path)` and the complete
+`provenance` returned by `parents`, not the whole configuration document.
+The resolver discovers bounded structured lineage and exact-channel catalog
+candidates, then freshly verifies the normalized record and every original
+parent's ID, full text hash, actor and creation time. It returns metadata only;
+it performs no embedding, generation or archive mutation.
+
+Select a common entry from `shared_matching_capture_versions`, preserving both
+its `source` and `source_sha256`, then use the ordinary original `hydrate`
+route below for each selected message and its relevant neighbors. If there is
+no shared capture, keep per-parent mappings explicit. The resolver preserves
+the frozen locator separately and does not select a capture merely because it
+is newest. A complete mapping does not mean the episode has been read.
+Candidate or deadline exhaustion does not establish absence. Its optional
+cutoff excludes observed later creation/edits and reports uncertain edit
+history; it never proves the current body was available at a historical time.
+The module is a verified host-accessible supplement, not an automatic fallback
+inside every consumer. Recheck its helper/common pins before use.
+
 A UPAR conversation ID can be handed to the bounded original-locator route:
 
 ```sh
