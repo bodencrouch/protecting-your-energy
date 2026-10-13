@@ -39,6 +39,15 @@ The executable route is documented in
 corrections separate from saved records and source evidence. A prepared packet is
 context for the work, not a completed result.
 
+For explicit source-conditioned drafting through the existing Claude client,
+use `python3 scripts/continuation_workflow.py` with the current request. See
+[continuation workflow](../../references/continuation-workflow.md) for its
+selected-source boundary, bounded review and revision, and client limits. Supply
+current changes from the conversation in RAM; a frozen archive or source bookmark
+does not establish that newer corrections were read. A model verdict remains
+separate from the owner's acceptance. This route can be invoked from either
+client; automatic skill discovery is not established by its existence.
+
 Before generation, make a separate applicability decision about consequential
 historical context. Where independent agents are available, give that decision
 to a reader who is not generating the artifact. Carry forward applicable meaning,
