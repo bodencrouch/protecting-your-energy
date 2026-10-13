@@ -34,6 +34,11 @@ only when it prevents delivery. Do not ask the owner to repair routing.
 For a request that depends on earlier work, prepare resumed context with
 `python3 scripts/continuation.py` from this plugin's root. Pass the rough request as one
 argument; use the current conversation to resolve any ambiguous task candidates.
+Lexical coverage can miss a valid continuation containing new subject matter.
+When the live conversation clearly links a returned candidate, the host may select
+its existing ID with `--task-id`; record this as host selection, not an automatic
+semantic match. Do not require the owner to supply an ID. When that link is uncertain,
+retain the uncertainty instead of assuming the saved task defines the new request.
 The executable route is documented in
 [continuation access](../../references/continuation-access.md). It keeps incoming
 corrections separate from saved records and source evidence. A prepared packet is
@@ -41,6 +46,14 @@ context for the work, not a completed result.
 Configured native source metadata is refreshed in RAM by this ordinary route;
 no separate refresh command is required. Treat its captured cutoff and coverage
 as explicit limits, and stop on unavailable required originals.
+For a sparse cue that depends on earlier meaning, formulate at most two provisional
+search probes from the current conversation, corrections and qualified available
+context. Seek consequential experiences or changed reasoning whose wording may
+differ from the cue, including context that could challenge the first interpretation.
+Forward these through repeated `--probe` arguments while leaving the original cue
+unchanged. The owner need not formulate search facets. Probes are search hypotheses;
+inspect retrieved episodes before carrying their meaning into an artifact. Clear
+requests need no additional probes. See [retrieval probes](../../references/retrieval-probes.md).
 
 For explicit source-conditioned drafting through the existing Claude client,
 use `python3 scripts/continuation_workflow.py` with the current request. See

@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '0b8796cc27fc895e893a54f749ad3c32550dca047fa30c9cfbfd12d93a800fc8'
+COMPILER_SHA = 'e5ba551a8d8bbdbbda8d0a50a6e4d12983bc0be3d39d3a2c455d15407fc1dfce'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072
@@ -31,6 +31,8 @@ normalized authorship, copied spans, revisable interpretations and creative prop
 No source coverage claim, belief adoption, real-person motive or settled historical
 verdict is established by retrieval or by this workflow. Preserve uncertainty and
 source limits. Clearly proposed fictional motivations and creative details are allowed.
+Query-plan hypotheses and matched search wording are retrieval probes, not recovered
+facts, owner requirements, or confirmation of the proposed interpretation.
 Infer purpose from relevant nuggets without inventing requirements or forcing every
 detail to be explained. Support the intended reader experience and local scope;
 leave wider objectives deferred where appropriate. Emotional or experiential goals
@@ -146,6 +148,26 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode()
 
 
+def query_plan_receipt(plan):
+    if not isinstance(plan, dict):
+        return None
+    def fingerprint(query):
+        raw = query.encode('utf-8')
+        return {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+    return {'original_cue_unchanged': plan.get('original_cue_unchanged'),
+            'explicit_facets': [fingerprint(query) for query in plan.get('explicit_facets', [])],
+            'hypotheses': [{**fingerprint(row['query']), 'status': row['status'],
+                            'classification': row['classification']}
+                           for row in plan.get('hypotheses', [])],
+            'selected_facet_count': plan.get('selected_facet_count'),
+            'planned_query_count_including_cue': plan.get('planned_query_count_including_cue'),
+            'facet_scope': plan.get('facet_scope'),
+            'dispatch_status': plan.get('dispatch_status'),
+            'canonical_status': plan.get('canonical_status'),
+            'probe_limit': plan.get('probe_limit'), 'total_facet_limit': plan.get('total_facet_limit'),
+            'qualifiers': plan.get('qualifiers'), 'query_bodies_included': False}
+
+
 def pointer(value, path):
     if not isinstance(path, str) or not path.startswith('/') or len(path) > 512:
         raise WorkflowError('source-pointer-invalid')
@@ -257,6 +279,10 @@ def critic_handle_catalog(context, units, applicability=None, draft=None):
         catalog['current-native-sources'] = {
             'meaning': 'Authenticated bookmarked native inputs; snapshot, authorship and adoption limits apply',
             'binding': 'context.current_native_sources'}
+    if isinstance(context.get('query_plan'), dict):
+        catalog['query-plan'] = {
+            'meaning': 'Supplied provisional search hypotheses; not source facts or owner requirements',
+            'binding': 'context.query_plan'}
     if applicability is not None:
         catalog['applicability'] = {'meaning': 'Revisable applicability model decision', 'binding': 'applicability'}
     if draft is not None:
@@ -507,6 +533,7 @@ def run_workflow(args, compiler, invoke=native_call):
                                  'context_sha256': hashlib.sha256(encoded(context)).hexdigest(),
                                  'canonical_status': context.get('canonical_evidence', {}).get('status'),
                                  'canonical_execution': context.get('canonical_evidence', {}).get('execution'),
+                                 'query_plan': query_plan_receipt(context.get('query_plan')),
                                  'coverage': receipt_qualifications(packet, packet.get('coverage')),
                                  'library_snapshot': packet.get('library_snapshot'),
                                  'context_view': packet.get('context_view'),
@@ -580,6 +607,7 @@ def main(argv=None):
     parser.add_argument('cue', nargs='+')
     parser.add_argument('--task-id')
     parser.add_argument('--query', action='append', default=[])
+    parser.add_argument('--probe', action='append', default=[])
     parser.add_argument('--unit-id', action='append', default=[])
     parser.add_argument('--correction', action='append', default=[])
     parser.add_argument('--corrections-stdin', action='store_true')

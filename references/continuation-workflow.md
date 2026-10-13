@@ -72,7 +72,11 @@ under 16 KiB unless the request explicitly requires more; the hard cap remains
 
 `--task-id`, repeated `--query`/`--unit-id`, repeated `--correction` and
 `--corrections-stdin` use the compiler's existing bounds. Stdin accepts correction
-strings as a JSON list or `{"corrections": [...]}`. `--timeout` sets the retrieval
+strings as a JSON list or `{"corrections": [...]}`. Optional repeated `--probe` accepts at most two provisional search
+hypotheses within the existing facet budget; see [retrieval probes](retrieval-probes.md).
+They are separate from source facts, and query bodies are excluded from the ordinary
+workflow source receipt. The critic's closed `query-plan` handle can identify a
+misapplied search hypothesis. `--timeout` sets the retrieval
 deadline to 1–120 seconds (default 90). `--native-timeout` sets each native
 generation deadline to 1–600 seconds (default 300). Both bounds are checked before
 source access or native calls. Up to five native deadlines can be consumed, plus

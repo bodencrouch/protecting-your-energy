@@ -772,6 +772,39 @@ def safe_error(error):
     return str(error) if isinstance(error, ContextError) else 'derived-input-unavailable-or-invalid'
 
 
+def retrieval_plan(cue, queries, probes):
+    """Keep supplied search hypotheses distinct from explicit facets and evidence."""
+    if (not isinstance(probes, list) or len(probes) > 2
+            or any(not isinstance(probe, str) or not probe.strip() or len(probe) > 2048
+                   for probe in probes)):
+        raise ContextError('retrieval-probes-require-at-most-two-bounded-strings')
+    selected = list(queries)
+    seen = {cue.strip(), *(query.strip() for query in queries)}
+    hypotheses = []
+    for probe in probes:
+        text = probe.strip()
+        if text in seen:
+            status = 'duplicate-suppressed'
+        elif len(selected) >= 6:
+            status = 'omitted-explicit-facet-budget'
+            seen.add(text)
+        else:
+            status = 'selected'
+            selected.append(text)
+            seen.add(text)
+        hypotheses.append({'query': text, 'status': status,
+                           'classification': 'supplied search hypothesis; not an owner fact or requirement'})
+    return selected, {'original_cue_unchanged': True, 'explicit_facets': list(queries),
+                      'hypotheses': hypotheses, 'selected_facet_count': len(selected),
+                      'planned_query_count_including_cue': len(dict.fromkeys([cue] + selected)),
+                      'facet_scope': 'supplementary facets; original cue is separate',
+                      'dispatch_status': 'not-attempted',
+                      'probe_limit': 2, 'total_facet_limit': 6,
+                      'qualifiers': ['The compiler does not independently verify who formulated a probe.',
+                                     'Retrieved hits do not confirm a hypothesis; inspect their actual context.',
+                                     'Speculative search wording must not become source facts or artifact requirements.']}
+
+
 def compile_context(args):
     cue = ' '.join(args.cue).strip()
     if not cue or len(cue) > 4096 or len(args.query) > 6 or any(not q.strip() or len(q) > 2048 for q in args.query):
@@ -782,6 +815,7 @@ def compile_context(args):
         raise ContextError('task-id-invalid')
     if not 1 <= args.timeout <= 120:
         raise ContextError('timeout-requires-one-to-120-seconds')
+    queries, query_plan = retrieval_plan(cue, args.query, getattr(args, 'probe', []))
     current_corrections = corrections(args)
     root, state_path, config_receipt = settings()
     state_receipt = None
@@ -802,13 +836,16 @@ def compile_context(args):
         current_record = bounded_record(row, selection['task_id'], state_receipt)
         artifact, accounts = derived_context(current_record['current'], root)
     native_sources = current_native_sources(current_record['current'] if current_record else {}, root)
-    substantive = bool(words(cue)) or bool(args.query) or bool(args.unit_id) or row is not None
+    substantive = bool(words(cue)) or bool(queries) or bool(args.unit_id) or row is not None
     if native_sources.get('configured') and native_sources.get('status') != 'read':
         evidence = {'status': 'not-attempted', 'reason': 'required-current-original-sources-unavailable',
                     'complete': False}
     else:
-        evidence = canonical_reclaim(cue, args.query, args.unit_id, args.timeout) if substantive else {
+        evidence = canonical_reclaim(cue, queries, args.unit_id, args.timeout) if substantive else {
             'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
+        if substantive:
+            query_plan['dispatch_status'] = 'canonical-reclaim-requested'
+    query_plan['canonical_status'] = evidence.get('status')
     if not getattr(args, 'full', False) and isinstance(evidence.get('packet'), dict):
         evidence = {**evidence, 'packet': compact_packet(evidence['packet'])}
     return {'version': 1, 'kind': 'continuation-context', 'complete': False,
@@ -817,6 +854,7 @@ def compile_context(args):
             'selection': selection, 'current_record': current_record,
             'selected_artifact': artifact, 'source_accounts': accounts,
             'current_native_sources': native_sources,
+            'query_plan': query_plan,
             'canonical_evidence': evidence,
             'continuity_source': {'state': state_status, 'revision': state.get('revision'),
                                   'source': state_receipt, 'configuration': config_receipt},
@@ -835,6 +873,7 @@ def main(argv=None):
     parser.add_argument('cue', nargs='+', help='Current ordinary request or rough retrieval cue')
     parser.add_argument('--task-id', help='Select one existing task explicitly')
     parser.add_argument('--query', action='append', default=[], help='Forward an exact retrieval facet; at most six')
+    parser.add_argument('--probe', action='append', default=[], help='Supply a provisional search hypothesis; at most two')
     parser.add_argument('--unit-id', action='append', default=[], help='Forward a lowercase SHA256 source anchor; at most six')
     parser.add_argument('--correction', action='append', default=[], help='Current correction kept in memory')
     parser.add_argument('--corrections-stdin', action='store_true', help='Read a JSON list of correction strings, or {"corrections": [...]}')
