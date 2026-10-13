@@ -36,9 +36,15 @@ retrieval cue. Recover the relevant original episodes and later corrections
 before compiling the final working prompt. Prioritize the period and sources
 the owner identifies, then seek complementary and contrary contexts. An
 illustrative example is not the specification of the whole capability.
+For broad rediscovery or a challenged interpretation, use `reasoning-map`'s
+source-led journey before loading a prior personal model. Preserve source-shaped
+accounts, unresolved references and competing readings. Current reasoning models
+remain candidates; the owner's corrections determine what needs revisiting.
 Use [archive access](../../references/archive-access.md) to carry the actual
-read and retrieval routes into each delegated task. A filesystem path alone
-does not establish semantic retrieval. Give investigators source access and
+read and retrieval routes into each delegated task. The default shared query now executes the configured local dense model.
+Check its actual generation scope and retrieve complete parent metadata when
+a packed lead is clipped. Use exact-name/lexical routes as labeled supplements.
+A filesystem path alone does not establish semantic retrieval. Give investigators source access and
 relevant methods, rather than only a lead agent's summary. For source-based
 independent evaluations, supply the locked original context without expected
 answers. Sustained effort, iterations and outcomes can reveal methods that a

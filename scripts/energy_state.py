@@ -11,7 +11,8 @@ import stat
 import sys
 import tempfile
 
-KINDS = {'method', 'idea', 'task', 'decision', 'correction', 'opportunity', 'run'}
+KINDS = {'method', 'idea', 'task', 'decision', 'correction', 'opportunity', 'run',
+         'episode', 'interpretation', 'frontier'}
 DEFAULT = Path.home() / 'brain-data/upar-dip/derived/protect-your-energy/state.json'
 
 

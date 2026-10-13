@@ -33,8 +33,10 @@ The optional `scripts/energy_state.py` retains private method, idea, task,
 decision, correction, opportunity and run records. Updates preserve previous
 versions and use locked atomic replacement. The current agent uses available
 archive tools and original-source checks; examples and personal evidence stay
-outside plugin source. A repeated message can signal invested reasoning or a
-needed repair. It does not automatically establish truth or today's priority.
+outside plugin source. Distinct returns and revisions preserve what mattered,
+why it mattered and how the thinking changed. Broad rediscovery follows original
+source contexts before loading a prior personal model, with unresolved links
+retained for later work.
 
 [Archive access](references/archive-access.md) provides shared source and retrieval
 routes for delegated tasks. Access receipts distinguish model-based semantic

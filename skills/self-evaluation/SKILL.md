@@ -6,6 +6,10 @@ description: Evaluate a skill or agent outcome against a specific user problem u
 # Evaluate the outcome
 
 State the specific problem, intended artifact and applicable requirements.
+Check the evaluation criteria themselves against the actual request and newly
+retrieved sources. An old anecdote, taxonomy or preferred method must not become
+a mandatory answer. Conditional methods are evaluated only where their purpose
+and conditions apply; retain newly discovered relevant requirements.
 Separate what was available, the action taken, the user repair required and the
 observed result. Read sources and actual outputs; do not infer success from
 activity, syntax, model agreement, silence or a completion claim.
@@ -35,3 +39,12 @@ inferred rule outside that scope remains a candidate: record its source, scope,
 counterexamples and check before promotion. Do not silently edit global memory,
 rewrite the owner or replace a missing deliverable with a policy conversation.
 Keep evaluation machinery and personal evidence out of outward-facing products.
+
+## Interpretation drift
+
+A fluent result can still optimize the wrong problem. At a consequential
+transfer, inspect a newly retrieved or contrary episode and test whether the
+recovered reason still explains the action. Report an omitted purpose, lost
+condition or wrong referent as a material miss. Repair the artifact and retain
+the earlier version. Retrieval scores, agent agreement and successful execution
+of a different goal do not validate this mapping.

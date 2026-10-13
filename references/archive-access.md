@@ -28,23 +28,96 @@ python3 /home/brunner56/plugins/protecting-your-energy/scripts/archive_access.py
   --year 2026 --platform discord --limit 5 --budget 20
 ```
 
-`status` reports readiness, not a performed retrieval or archive completeness.
-The observed default route uses the existing UPAR CLI's bounded Parquet lexical
-fallback. Its `hybrid_search` name does not establish vector semantics. The full
-UPAR route also uses `skip_dense=True`; hash embeddings, BM25 and substring
-matches must keep their actual labels. A cached model alone is not a usable
-index. A separate dense index was not located in the bounded October 11 check.
+`auto` and `semantic` now use the configured **local transformer** route.
+`archive_access.dense` provides its script, Python runtime, index and model paths.
+An optional `backend: "semantic-archive"` selects the generic canonical archive
+reader. Its additional `root` is the frozen normalized archive, while
+`original_root` identifies the raw archive. Both stay separate from the index.
+`excluded_source_prefixes` repeats any CLI exclusions used when publishing that
+generation; a policy mismatch fails closed. Omitting `backend` preserves the
+Discord dense route.
+When a native attribution correction map is configured, the optional dense
+fields `native_attribution_proof` and `native_attribution_proof_sha256` must be
+provided together. They pass the exact pinned map to the reader; effective
+classification and its provenance remain distinct from archived role labels.
 
-An existing index can be selected through `archive_access.semantic_index` or
-`PYE_SEMANTIC_INDEX`, without rebuilding or downloading anything. The optional
-`--mode semantic` adapter follows the installed reclaim `semantic_leads`
-contract: `<index>/.venv/bin/python <index>/query.py QUERY -k N --role self
---json`. It refuses guarded/staging stores and labels this route
-`semantic-unverified`. Inspect the actual backend/model and its fallback before
-calling it dense semantic search; a successful JSON response alone is
-insufficient. No dense semantic success is claimed by this helper.
+The generic reader returns nested `provenance`, including every parent and the
+normalized part, record offset and record hash. Its query output contains no
+message text. `parents --unit-id HASH --generation GENERATION` verifies the
+normalized parent record and returns metadata. Read its context with
+`hydrate --unit-id HASH --generation GENERATION --context 3 --max-chars 8000`.
+The generation pins both operations to the query result. Parent text hashes
+refer to normalized text; raw-source presence does not establish original byte
+verification. Existing `hydrate --source PATH --message-id ID` still performs
+the separate original Discord read. Generic semantic queries accept
+`--year all` and searches all years when no year is specified. The legacy
+semantic reader and lexical/path modes default to 2026. An explicit four-digit
+year filters either semantic reader. The shared read-only worker denies
+filesystem mutations and network access for every reader.
+Generic queries and the reclamation CLI accept `--include-unconfirmed-input`
+to include task inputs whose human authorship is unresolved. The default query
+omits that lane. Returned provenance and hydrated roles retain its uncertainty;
+the flag does not establish owner authorship. Legacy and lexical/path routes
+reject this flag.
+The separate `--include-context-documents` flag on either generic query or the
+reclamation CLI includes document context. It defaults off and is independent
+of `--include-unconfirmed-input`; that flag alone does not include documents.
+Legacy and lexical/path routes reject it. These units retain
+`role: context_document`, `primary_owner_evidence: false`, their explicit
+attribution/evidence fields and original parent roles/authors. Hydrated document
+parents are source parents, never indexed owner parents, even when an archived
+role says `self`.
+
+Generic status uses the backend's compact response; per-source classification
+maps remain in its immutable manifest. Parent lookup verifies full text hashes
+without returning message bodies. Hydration limits text before transport and
+retains original lengths, full hashes, truncation flags and continuation
+locators. When prefixes would omit a matched span, the bridge rereads only the
+backend-approved canonical record (up to 256 MiB), rechecks its exact byte hash,
+record/message IDs, pointers and full text hashes, then shares the character
+budget among matched parents before neighboring turns. Output remains in source
+chronology. `text_range` gives the actual displayed character offsets;
+`matched_span_covered` reports whether the match fits, and `continuations` names
+omitted ranges before and after it. Effective actor/proof fields from the backend
+are preserved. Oversized, unsupported or expired rereads explicitly report a
+window gap; they never establish complete parent context. A bounded response is
+incomplete context when any row is truncated; follow its record locator, message
+pointer and character offsets for the rest.
+The reread checks the remaining budget between bounded reads and after decoding.
+Individual filesystem reads and JSON decoding are not separately cancellable;
+the record ceiling bounds their size. The backend subprocess keeps its external
+deadline and its read-only, offline audit hook.
+
+The backend is BGE-small-en-v1.5, 384-dimensional normalized CLS embeddings,
+with its actual tokenizer, model hashes and query instruction in each receipt.
+The cached public model runs locally through ONNX Runtime; private text is not
+submitted to a model service. This is semantic candidate discovery, not a
+completed interpretation or evidence of comprehensive recall.
+
+Read `scope` before using leads. A published immutable partial generation can
+be queried while its checkpoint continues building; planned sources and vectors
+are not actual indexed coverage. The initial index prioritizes 2026 Discord.
+Older origins, Notes, AI histories, attachments and unindexed source families
+still require scoped original investigation. `status` verifies the published
+generation's metadata; it does not measure relevance or owner usefulness.
+See [semantic retrieval](semantic-retrieval.md) for exact build/resume commands,
+version preservation, coverage, model limits and evaluation receipts.
+
+An unavailable dense route returns an explicit failure; `auto` never silently
+relabels a lexical fallback as semantic. Request `--mode lexical` or `--mode
+paths` for a supplementary exact-name/phrase lookup. The UPAR `hybrid_search`
+name and its `skip_dense=True` path do not establish vector semantics. Path
+metadata and `catalog` are also separately labeled exact lookup routes.
 
 ## Search for the causal meaning
+
+When configured, `catalog --query NAME_OR_CHANNEL --limit 10` reads the private
+`source_catalog` metadata, including named exports and newer numeric snapshot
+locators. `--offset` continues the bounded metadata list. This is filename/header
+discovery, not content or semantic search. Verify actual guild/channel, dates,
+author and observed versions in the original; a snapshot manifest window does
+not prove its last message date. Use it when a stale Parquet index omits a newer
+source, then follow the original conversation instead of declaring it absent.
 
 Begin with the current purpose, audience and decision. Expand a rough cue into
 separate facets rather than joining all related words into one phrase:
@@ -60,14 +133,40 @@ Prioritize the requested period and sources; sustained OpenKotOR work may need
 several connected discussions rather than a single memorable message. A new
 name or corrected referent should change the next query. Different wording can
 serve the same goal, while a repeated topic can be a decoy. Record the causal
-bridge before combining pieces. This is meaning-oriented investigation by the
-agent; the underlying lexical matcher does not become an embedding model.
+bridge before combining pieces. Model similarity finds candidates; the agent must still investigate causal
+meaning and retrieve later corrections. A near neighbor can share the topic
+without answering the actual purpose.
 
 The helper accepts up to three distinct queries, returns at most 20 leads and
 uses an overall 1–60 second query budget. An independent subprocess deadline
 kills an upstream job that hangs; output is capped. No background worker is
 left running. Archive text, vectors and copied prompts are removed from query
-output. Returned IDs, times and source locators are discovery leads only.
+output. Returned IDs, source/version hashes, parent locators and times are discovery
+leads only. Complementary queries share the result limit fairly. A packed
+window can contain several parent messages: read its parent IDs, including any
+locators omitted from the bounded display, before interpreting its meaning.
+For the generic semantic archive route, `queries_used` means completed accepted
+backend queries, including valid zero-hit responses; `queries_requested` retains
+the distinct requested facets. `query_execution` distinguishes attempts, completed
+queries, failures, budget-deferred facets and requests omitted by the three-facet
+limit, with source failures retained per completed facet. `all_facets_completed`
+and `source_verification_complete` report execution and source-check gaps; neither
+is an archive-completeness or relevance claim. Older receipts may have used
+`queries_used` for the requested list. TR marks explicit false flags as incomplete
+discovery while preserving compatibility with routes that lack these flags.
+When an auxiliary media lookup consumes the query budget, the primary lane
+returns `primary-deferred-budget` with no model attempt and retains the separate
+media result. A positive remainder is passed through exactly, without granting
+an extra minimum second. Completion flags describe execution, not relevance.
+Nonempty query and include-lane validation runs before either lane, including
+when the primary lane is deferred. Generic generation syntax remains validated.
+Both lanes receive the same cleaned distinct first three facets, so duplicate or
+empty raw requests do not crowd out complementary facets in media discovery.
+
+Use `parents --unit-id UNIT_HASH --generation GENERATION_FROM_QUERY` for the
+complete original parent metadata of a packed unit. This pins the immutable
+query generation and freshly checks every parent. Hydrate those exact IDs and
+versions within the task budget; do not interpret the first four as all parents.
 
 ## Resolve the original and read the episode
 
@@ -104,12 +203,14 @@ Once a real Discord message ID and path are known, obtain a small exact window:
 ```sh
 python3 /home/brunner56/plugins/protecting-your-energy/scripts/archive_access.py hydrate \
   --source 'archive/originals/discord/ACTUAL_EXPORT.json' \
-  --message-id ACTUAL_MESSAGE_ID --context 3 --max-chars 8000
+  --message-id ACTUAL_MESSAGE_ID --context 3 --max-chars 8000 \
+  --version VERSION_HASH_FROM_LEAD --source-sha256 SOURCE_HASH_FROM_LEAD
 ```
 
 Hydration returns at most 21 messages and 20,000 characters, with author IDs,
 timestamps, JSON pointers and truncation flags. It accepts original Discord
-JSON up to 32 MiB. For a slower mount, wrap this original read with the shell's
+JSON up to 32 MiB. Supplying the indexed source and message-version hashes
+refuses changed originals instead of hydrating a different text silently. For a slower mount, wrap this original read with the shell's
 `timeout 15s`; JSON file loading itself has a size cap, not a cancellable read
 budget. For larger JSON, JSONL, Notes or AI histories, use a streaming filesystem
 reader scoped to the exact source/message/line locator. Keep the same guards and
@@ -139,7 +240,7 @@ flags are set. Its process/output budgets also bound machine waiting.
 Both apparent and resolved paths are checked. Sealed, request-only, sanitized
 staging and sealing-marker paths are refused. Explicit withheld/request-only
 record flags are excluded. Hydration also reuses the installed corpus's author
-ID/name exclusions and refuses an excluded target. These guards do not discover
+ID/name exclusions and the semantic helper's credential/scaffolding exclusions and refuses an excluded target. These guards do not discover
 an undisclosed restriction or establish that an old index is fully sanitized:
 respect the source request and existing sealing policy, and fail closed when a
 store's eligibility is uncertain. Never expose private archive fragments in

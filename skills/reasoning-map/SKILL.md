@@ -12,6 +12,16 @@ Do not reduce these cues to word frequency or a personality label.
 
 ## Recover before advising
 
+For an open-ended understanding request, start a fresh source journey before
+loading an existing owner profile or method map. Inventory actual source families
+and dates, including newer numeric snapshots and inbox material. A familiar
+export filename or a derived index can conceal a chronological cutoff.
+Read broadly in chronological/contextual order, follow references that emerge
+from the messages, and retain a frontier of unanswered links. Record why each
+new conversation was followed. Let descriptions and connections emerge from
+the source; supplied categories remain retrieval cues rather than expected
+conclusions. Read [source journey](../../references/source-journey.md).
+
 Start from the current goal, audience, decision and source period the owner
 identifies. Use the current message to locate relevant original episodes.
 Search complementary semantic facets and other relationships or dates. Read
@@ -22,12 +32,14 @@ leads, not the definition of the problem.
 Deduplicate export snapshots by stable source/message identity. A deliberate
 repost or return to an idea in a different setting is a distinct investment
 event, while the underlying idea may remain the same. Distinguish owner-created
-text, quoted/copied work, exploration, endorsement and later rejection. Strong
-emphasis does not establish factual truth, current priority or agreement.
+text, quoted/copied work, exploration, endorsement and later rejection. Recover
+the stakes and reasons behind emphasis before considering its present use.
 Use a distinct investment event to investigate a continuation, needed repair
 or reusable method. Record what changed, what effort recurred and which useful
 operation follows under the present conditions. Do not stop at describing the
 owner as invested or recurring; connect the cue to the current artifact.
+When the rationale or referent remains unresolved, preserve an episode and
+frontier instead of forcing a method or immediate operation.
 
 Trace relations between episodes: continuation, elaboration, revision, contrast,
 shared mechanism, or only topic overlap. Before linking pieces, explain their
@@ -37,9 +49,20 @@ corrections; do not fill an actual knowledge gap with a confident invention.
 
 ## Build a revisable method
 
-For each useful pattern, retain:
+Keep discovery, interpretation and application distinguishable. During discovery,
+preserve the owner's own explanations, desired experience and unresolved questions.
+Persistent disagreement can depend on several unstated conditions, a substantive
+principle or earlier experience; do not replace those reasons with a simplifying
+personality judgment. Develop plausible alternatives from the actual context and
+seek the referenced history before resolving them. Evaluate external assertions
+when needed for the requested action, without turning source discovery into an
+adjudication of the person or pressure to conform.
+
+When it fits the recovered meaning, a useful scaffold is:
 
 `goal → causal reason → applicable conditions → useful operation → result`
+
+Keep a source-shaped record when this scaffold would distort or omit the idea.
 
 Also retain counterconditions, dated corrections, original sources, uncertainty
 and the observed outcome. Separate the owner's stated problem from the proposed
@@ -60,11 +83,30 @@ links necessary to understand the claim; optional depth can be offered at the
 appropriate moment. Keep terminology and causal inference distinct from
 scientific validation of a claim.
 
+## Challenge the interpretation while it is being used
+
+Reopen the source basis when the owner challenges understanding, an important
+request repeats, a later correction appears, the goal changes, or an operation
+is about to rely on an inferred general rule. Retrieve a new episode or contrary
+setting through the actual semantic route; do not only reread the example that
+created the rule. Compare the rule's prediction with the stated reasons, changed
+conditions and observed outcome. Record the mismatch and revise applicability
+or preserve an unresolved frontier. A repeated explanation might repair a missing
+premise, communicate an experience, seek collaboration, or continue an idea;
+let the episode determine which. Do not assume repetition is itself friction.
+
+Before delivering advice, name privately the source-supported goal, the causal
+link to the proposed operation, and the observation that could show the mapping
+wrong. If these are missing, investigate the consequential gap and proceed with
+independent useful work. Do not narrate a confidence ritual or ask the owner to
+perform routine source work. Keep uncertainty attached to the actual claim,
+not to a personality score or embedding similarity.
+
 ## Apply the pattern
 
 Compare the present situation with the method's goal, conditions, latest
-correction and counterconditions. Select the smallest useful operation within
-the request: develop the idea, recover a missing connection, draft the message,
+correction and counterconditions. Select an operation that advances the full
+requested result and preserves its causal chain: develop the idea, recover a missing connection, draft the message,
 choose the next result, preserve a checkpoint, or verify a new opportunity.
 Preserve meaningful ambition and creative choices. When a particular means or
 participant is unavailable, carry the underlying goal toward an authorized
