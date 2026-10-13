@@ -14,10 +14,9 @@ WORKFLOW_SHA = 'b8ca97edf9aa31474ec10df97fc21f4db90c1f97d3fad8450dfbd9f32f1b4bf0
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
     'stage-object-keys-invalid', 'provisional-plan-memory-schema-invalid',
-    'inference-artifact-over-byte-limit', 'inference-writer-source-id-invalid',
-    'empty-source-basis-requires-qualified-proposal', 'inference-source-use-schema-invalid',
-    'inference-source-use-id-invalid', 'inference-source-role-overstated',
-    'inference-source-use-explanations-missing', 'inference-native-stage-failed',
+    'inference-artifact-over-byte-limit', 'inference-source-use-map-schema-invalid',
+    'inference-source-use-map-keys-invalid', 'inference-source-role-overstated',
+    'inference-native-stage-failed',
     'inference-canonical-retrieval-failed', 'inference-hydrated-unit-bound-exceeded',
     'captured-native-context-changed'))
 
@@ -38,9 +37,11 @@ Honor the CURRENT request and corrections over older context and the provisional
 brief. The brief is revisable inference, not new requirements. Keep the requested
 local scope; target under 16 KiB unless the request explicitly needs more. Select
 available source units only when each changes a specific useful artifact decision;
-empty selection is allowed. Explain uses privately in the structured source_uses.
-Set source_limited_proposal to true whenever source_basis is empty: it means no
-selected archival grounding, even when the current cue or native inputs suffice.
+empty selection is allowed. In source_uses, return every available source ID as
+an exact key: null means unused; a use object explains its specific artifact
+decisions and limitations privately. One source can inform multiple decisions.
+The route derives the selected basis and absence of archival grounding from this
+map, even when the current cue or native inputs suffice.
 Preserve primary versus contextual, mixed, quoted and unconfirmed source roles.
 Owner-attributed source is not independent identity, original-byte or adoption
 proof. Do not turn operational context, peer words, search hypotheses or generated
@@ -96,30 +97,25 @@ def validate_plan(transport, value):
 
 
 def writer_schema(transport, units):
-    uid = {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}
-    if units:
-        uid['enum'] = list(units)
-    count = min(6, len(units))
     text = {'type': 'string', 'minLength': 1, 'maxLength': 4096}
-    use = transport.object_schema({'unit_id': uid, 'artifact_decision': text, 'use': text,
-        'evidence_role': {'type': 'string', 'enum': ['owner-attributed-source', 'context-only']},
-        'limitations': text})
-    limited = {'type': 'boolean', 'description': 'True is required when source_basis is empty: no selected archival grounding, even if current cue or native inputs suffice.'}
-    if not units:
-        limited['const'] = True
+    slots = {}
+    for uid, unit in units.items():
+        roles = ['owner-attributed-source', 'context-only'] if owner_source_available(unit) else ['context-only']
+        use = transport.object_schema({'artifact_decision': text, 'use': text,
+            'evidence_role': {'type': 'string', 'enum': roles}, 'limitations': text})
+        slots[uid] = {'anyOf': [{'type': 'null'}, use],
+                      'description': 'Null means unused; a use object explains artifact decisions informed by this source.'}
     return transport.object_schema({
         'artifact': {'type': 'string', 'minLength': 1, 'maxLength': transport.ARTIFACT_LIMIT},
-        'source_basis': {'type': 'array', 'items': uid, 'maxItems': count, 'uniqueItems': True},
-        'source_uses': {'type': 'array', 'items': use, 'maxItems': count},
-        'uncertainties': {'type': 'array', 'items': text, 'maxItems': 8},
-        'source_limited_proposal': limited})
+        'source_uses': transport.object_schema(slots),
+        'uncertainties': {'type': 'array', 'items': text, 'maxItems': 8}})
 
 
 def response_receipt(transport, value, stage):
     """Describe a rejected candidate without exporting its text or extra keys."""
     raw = transport.encoded(value)
     fields = {}
-    names = ('artifact', 'source_basis', 'source_uses', 'uncertainties', 'source_limited_proposal') if stage == 'inference_artifact' else (
+    names = ('artifact', 'source_uses', 'uncertainties') if stage == 'inference_artifact' else (
         'purpose', 'reader_effect', 'local_scope', 'creative_options', 'uncertainties', 'memory_useful', 'probes')
     if isinstance(value, dict):
         for key in names:
@@ -131,6 +127,9 @@ def response_receipt(transport, value, stage):
                 shape.update(characters=len(item), utf8_bytes=len(item.encode()))
             elif isinstance(item, (list, dict)):
                 shape['count'] = len(item)
+                if key == 'source_uses' and isinstance(item, dict):
+                    shape['null_count'] = sum(child is None for child in item.values())
+                    shape['object_count'] = sum(isinstance(child, dict) for child in item.values())
             elif type(item) is bool:
                 shape['value'] = item
             fields[key] = shape
@@ -153,37 +152,33 @@ def owner_source_available(unit):
 
 
 def validate_writer(transport, value, units):
-    transport.exact_keys(value, ('artifact', 'source_basis', 'source_uses', 'uncertainties',
-                                 'source_limited_proposal'))
+    transport.exact_keys(value, ('artifact', 'source_uses', 'uncertainties'))
     transport.string(value['artifact'], transport.ARTIFACT_LIMIT)
     if len(value['artifact'].encode()) > transport.ARTIFACT_LIMIT:
         raise InferError('inference-artifact-over-byte-limit')
-    basis = transport.strings(value['source_basis'], 6)
-    if len(set(basis)) != len(basis) or any(uid not in units for uid in basis):
-        raise InferError('inference-writer-source-id-invalid')
-    if type(value['source_limited_proposal']) is not bool or (not basis and not value['source_limited_proposal']):
-        raise InferError('empty-source-basis-requires-qualified-proposal')
-    uses = value['source_uses']
-    if not isinstance(uses, list) or len(uses) > 6:
-        raise InferError('inference-source-use-schema-invalid')
-    ids = []
-    for use in uses:
-        transport.exact_keys(use, ('unit_id', 'artifact_decision', 'use', 'evidence_role', 'limitations'))
-        uid = use['unit_id']
-        if uid not in basis or uid in ids:
-            raise InferError('inference-source-use-id-invalid')
-        ids.append(uid)
+    slots = value['source_uses']
+    if not isinstance(slots, dict):
+        raise InferError('inference-source-use-map-schema-invalid')
+    if set(slots) != set(units):
+        raise InferError('inference-source-use-map-keys-invalid')
+    basis, uses = [], []
+    for uid in units:
+        use = slots[uid]
+        if use is None:
+            continue
+        transport.exact_keys(use, ('artifact_decision', 'use', 'evidence_role', 'limitations'))
         for field in ('artifact_decision', 'use', 'limitations'):
             transport.string(use[field], 4096)
         role = use['evidence_role']
         if role not in ('owner-attributed-source', 'context-only') or (
                 role == 'owner-attributed-source' and not owner_source_available(units[uid])):
             raise InferError('inference-source-role-overstated')
-    if set(ids) != set(basis):
-        raise InferError('inference-source-use-explanations-missing')
+        basis.append(uid)
+        uses.append({'unit_id': uid, **use})
     for text in transport.strings(value['uncertainties'], 8):
         transport.string(text, 4096)
-    return value
+    return {'artifact': value['artifact'], 'source_basis': basis, 'source_uses': uses,
+            'uncertainties': value['uncertainties'], 'source_limited_proposal': not bool(basis)}
 
 
 def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifact=None):
