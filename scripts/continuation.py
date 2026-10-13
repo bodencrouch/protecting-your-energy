@@ -26,6 +26,7 @@ RECLAIM = Path.home() / 'brain-data/upar-dip/tooling/thought-reconstruction/bin/
 DISPLAY_SHA = '1b255b77c5e5c5043f04e73753abf5516e717633a7cb6d172d3d0a092e6706f5'
 NATIVE_CONTEXT_SHA = '224064965aed00cb6dec46aa3ba177a0f9a2b07986894075c9236a3b509576b8'
 NATIVE_REFRESH_SHA = '266b269dc1e2114f89141cfb8e86d33df5b57f506b7dee06cd9aeed9ae4f901a'
+CHAT_PROPOSAL_SHA = '0430f17e6ee0926111fda04f040a6f04b164d88f55a591877dcde66064cd0128'
 BLOCKED = ('.sealed', '.sanitized', '.seal-', 'request-only', 'request_only',
            '.request-only', 'quarantine', 'credentials', '.staging')
 MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
@@ -56,6 +57,19 @@ def display_module():
     module = importlib.util.module_from_spec(spec)
     exec(compile(raw, str(path), 'exec'), module.__dict__)
     return module.sanitize_payload
+
+
+def proposal_sources_module():
+    path = Path(__file__).resolve().with_name('chat_proposal.py')
+    if path.is_symlink() or path.resolve().parent != Path(__file__).resolve().parent:
+        raise ContextError('proposal-module-location-invalid')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != CHAT_PROPOSAL_SHA:
+        raise ContextError('proposal-module-hash-mismatch')
+    module = types.ModuleType('pye_chat_proposal')
+    module.__file__ = str(path)
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module.load_proposal
 
 
 def native_sources_module():
@@ -308,7 +322,33 @@ def derived_context(current, root):
     artifact = {'status': 'not-configured', 'classification': 'artifact-proposal'}
     accounts = []
     path, section = current.get('artifact'), current.get('artifact_section')
-    if path:
+    chat = current.get('chat_artifact')
+    configured_proposal = isinstance(chat, dict) and 'native_proposal' in chat
+    if configured_proposal:
+        artifact.update(status='unavailable', configured=True, required=True,
+                        classification='assistant-artifact-proposal', reference_kind='native-final-message')
+        try:
+            if path:
+                raise ContextError('artifact-source-selection-ambiguous')
+            native = proposal_sources_module()(chat['native_proposal'], guarded)
+            if native.get('status') != 'read':
+                artifact['error'] = 'required-selected-proposal-unavailable'
+            else:
+                text = native['text'].encode('utf-8')
+                receipt = {'sha256': native['text_sha256'], 'bytes': len(text),
+                           'hash_scope': 'UTF-8 output_text content concatenated without a separator',
+                           'coordinate_scope': 'decoded proposal text; not native JSONL file offsets',
+                           'native_source': native['source'],
+                           'native_records': [{key: row.get(key) for key in (
+                               'message_id', 'timestamp', 'role', 'phase', 'byte_range',
+                               'record_sha256', 'text_sha256', 'full_record_checked')}
+                               for row in native['records']]}
+                artifact.update(status='read', owner_evidence=False, adoption_verified=False,
+                                task_completion_verified=False, qualifiers=native['qualifiers'],
+                                **text_slice(text, receipt, chat.get('section'), char_limit=128 * 1024))
+        except (ContextError, OSError, UnicodeError) as error:
+            artifact.update(status='unavailable', error=safe_error(error))
+    elif path:
         try:
             if not isinstance(path, str) or section is None:
                 raise ContextError('artifact-requires-path-and-exact-section')
@@ -874,8 +914,11 @@ def retrieve_context(prepared, args, probes=None, *, retrieve=True):
         raise ContextError('retrieval-facets-outside-bounds')
     queries, plan = retrieval_plan(cue, args.query, getattr(args, 'probe', []) if probes is None else probes)
     native = prepared['current_native_sources']
+    artifact = prepared.get('selected_artifact', {})
     substantive = bool(words(cue)) or bool(queries) or bool(args.unit_id) or prepared['current_record'] is not None
-    if native.get('configured') and native.get('status') != 'read':
+    if artifact.get('required') and artifact.get('status') != 'read':
+        evidence = {'status': 'not-attempted', 'reason': 'required-selected-proposal-unavailable', 'complete': False}
+    elif native.get('configured') and native.get('status') != 'read':
         evidence = {'status': 'not-attempted', 'reason': 'required-current-original-sources-unavailable', 'complete': False}
     elif not retrieve:
         evidence = {'status': 'not-attempted', 'reason': 'retrieval-skipped-by-caller', 'complete': False}

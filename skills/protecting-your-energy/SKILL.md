@@ -57,6 +57,14 @@ corrections and any artifact proposal through stdin in RAM. The host resolves a
 saved task from the live conversation when needed; do not ask the owner for task
 IDs or search facets. Standalone task selection retains its lexical limits.
 
+When resuming an earlier assistant draft, use the selected task's explicit
+`chat_artifact.native_proposal` metadata locator when available. Keep its original
+assistant/proposal role separate from the owner's inputs. See
+[proposal qualification](../../references/chat-proposal.md). A delivered summary
+does not substitute for a separate full draft, and an unavailable required
+proposal stops retrieval and generation. Do not ask the owner for record IDs or
+silently choose the newest assistant message as the artifact.
+
 For clear requests, draft directly in the host or use this route with `--direct`,
 which skips planning and implicit archive retrieval. When the host has already
 inferred a useful brief, it may supply that provisional plan through stdin rather

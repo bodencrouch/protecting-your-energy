@@ -66,6 +66,20 @@ artifact section and up to three bounded source account excerpts are returned.
 Version content and unrelated records are omitted. Files outside that derived
 root, symlinks, guarded/request-only paths and the raw archive are refused.
 
+A selected current record can instead contain `chat_artifact.native_proposal`,
+an explicit metadata-only native assistant final-message descriptor. The pinned
+[proposal reader](chat-proposal.md) authenticates its original header and exact
+row, keeping the body in RAM. Optional `chat_artifact.section` selects one unique
+Markdown heading; omission retains the complete selected answer, up to the
+reader's 128 KiB UTF-8 limit. Decoded-text slice coordinates are explicitly
+distinct from native JSONL source offsets. Owner-evidence, adoption and task
+completion remain false. A summary locator restores only that summary.
+There is no latest-answer scan or implicit replacement of an existing artifact.
+Dual file/native references, missing sections and failed explicit proposal reads
+remain unavailable; canonical retrieval and both generation routes stop before
+querying or drafting when this configured proposal is required and unavailable.
+The host records and resolves a qualified locator; the owner need not supply IDs.
+
 The command delegates evidence retrieval to the installed canonical
 `thought-reconstruction reclaim` command with `--stdout`. It inherits that
 runtime's existing configuration, including `THOUGHT_RECONSTRUCTION_CONFIG`.
@@ -81,7 +95,8 @@ state or become historical evidence. Use stdin when the command line should
 not contain the correction text; shell and host logging are outside this helper.
 
 Limits are explicit: configuration 256 KiB, state 16 MiB, selected record
-32 KiB, each derived text file 512 KiB, artifact display 12,000 characters,
+32 KiB, each derived text file 512 KiB, file-artifact display 12,000 characters,
+native assistant proposal 128 KiB in UTF-8 without clipping,
 account display 8,000 characters each and canonical stdout 4 MiB. `--timeout`
 sets a 1–120 second subprocess deadline (default 90). Timeout and overflow
 terminate verified owned descendants, including workers that start new process

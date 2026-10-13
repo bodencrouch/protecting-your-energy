@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-WORKFLOW_SHA = 'b8ca97edf9aa31474ec10df97fc21f4db90c1f97d3fad8450dfbd9f32f1b4bf0'
+WORKFLOW_SHA = 'a52605cad53ea8950f32cc0f491a0ecf1ddf89dd86d9870a61c87f2c91fb824f'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
     'stage-object-keys-invalid', 'provisional-plan-memory-schema-invalid',
@@ -226,6 +226,10 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
                  'caller_proposals_display_redaction': proposals.get('display_redaction'),
                  'proposal_hash_scope': 'UTF-8 compact JSON; original and display-rendered caller proposals are distinct; current_artifact_sha256 uses rendered JSON'}}
     native = prepared['current_native_sources']
+    artifact = prepared.get('selected_artifact', {})
+    if artifact.get('required') and artifact.get('status') != 'read':
+        result['error'] = 'required-selected-proposal-unavailable'
+        return result
     if native.get('configured') and native.get('status') != 'read':
         result['error'] = 'required-current-original-sources-unavailable'
         return result

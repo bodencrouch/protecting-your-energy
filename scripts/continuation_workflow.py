@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '376dd3db942fc4108c7f9b1a95ac4e55abe7b8764e7e823892f984fcb858624b'
+COMPILER_SHA = 'aa46a005cb4b84d77a6c4c4e0f9837dc50df0dbc2a5a8c02461fd9cee6a17f09'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072
@@ -542,6 +542,10 @@ def run_workflow(args, compiler, invoke=native_call):
                                  'available_hydrated_unit_ids': list(units)}}
     if args.include_context:
         result['context'] = context
+    artifact = context.get('selected_artifact', {})
+    if artifact.get('required') and artifact.get('status') != 'read':
+        result['error'] = 'required-selected-proposal-unavailable'
+        return result
     if native.get('configured') and native.get('status') != 'read':
         result['error'] = 'required-current-original-sources-unavailable'
         return result
