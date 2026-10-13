@@ -170,7 +170,19 @@ versions within the task budget; do not interpret the first four as all parents.
 
 ## Resolve the original and read the episode
 
-If the recorded Discord capture lacks a selected parent, resolve an exact
+Full Discord conversation unit hydration now attaches a separate
+`original_episode`: freshly verified original parents and bounded surrounding
+messages. It first checks the recorded capture, then attempts one bounded
+alternate-capture resolution for missing or stale originals. Normalized and
+frozen provenance remain intact. Original text shares the existing character
+and time budgets; metadata-only lookup does not perform this extra read.
+Check mapping completeness, displayed selected parents, truncation and reply
+gaps separately. Unavailable originals leave an explicitly qualified normalized
+packet, not evidence that the archive contains no original. If the indexed
+original file hash is absent, exact parent matching can establish a fresh file
+pin; the result explicitly retains that weaker initial source binding.
+
+For a separate metadata-only recovery, resolve an exact
 alternate version with
 `~/brain-data/upar-dip/tooling/retrieval/discord_capture_resolver.py`.
 Its `resolve_original_parents(settings, verified_provenance)` API takes the
@@ -190,8 +202,12 @@ is newest. A complete mapping does not mean the episode has been read.
 Candidate or deadline exhaustion does not establish absence. Its optional
 cutoff excludes observed later creation/edits and reports uncertain edit
 history; it never proves the current body was available at a historical time.
-The module is a verified host-accessible supplement, not an automatic fallback
-inside every consumer. Recheck its helper/common pins before use.
+The shared full-unit route carries this supplement through Thought
+Reconstruction and the continuation writer's source bundle. Other readers are
+not automatically changed. Standalone resolver calls after a helper update
+must supply the independently checked helper SHA via
+`expected_helper_sha256=...` or `--helper-sha256`; injected helper IO is
+explicitly caller-qualified. Recheck its helper/common pins before use.
 
 A UPAR conversation ID can be handed to the bounded original-locator route:
 

@@ -2,6 +2,7 @@
 """Bounded local archive leads and original hydration; never edits the archive."""
 from __future__ import annotations
 import argparse
+import errno
 import hashlib
 import importlib.util
 import json
@@ -14,13 +15,15 @@ import stat
 import subprocess
 import sys
 import time
+import types
 
 sys.dont_write_bytecode = True
 
 # Callers may load this helper by file location, without its directory on
 # sys.path. Load the verified sibling directly rather than searching imports.
-_display_path = Path(__file__).resolve().with_name('archive_display.py')
-if _display_path.resolve().parent != Path(__file__).resolve().parent:
+CANONICAL_HELPER_DIR = Path.home() / 'plugins/protecting-your-energy/scripts'
+_display_path = CANONICAL_HELPER_DIR / 'archive_display.py'
+if _display_path.resolve().parent != CANONICAL_HELPER_DIR.resolve():
     raise ImportError('archive display module is outside helper directory')
 _display_bytes = _display_path.read_bytes()
 if hashlib.sha256(_display_bytes).hexdigest() != '1b255b77c5e5c5043f04e73753abf5516e717633a7cb6d172d3d0a092e6706f5':
@@ -37,6 +40,8 @@ TOOLING = Path.home() / 'brain-data/upar-dip/tooling/retrieval'
 BLOCKED = ('.sealed', '.sanitized', '.seal-', 'request-only', 'request_only', '.request-only', 'quarantine', 'credentials', '.staging')
 MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
 NATIVE_ROLE_POLICY_SHA = '6d90613f98310685ad85f343c502b25bff00407c15c1585e0bf9c052ddec680e'
+ORIGINAL_RESOLVER = TOOLING / 'discord_capture_resolver.py'
+ORIGINAL_RESOLVER_SHA = '409abf482adb9fa3d68865c049730a3c3e1ada002fc641b22b2daab11bb61207'
 
 
 def guarded(path: Path) -> bool:
@@ -661,11 +666,14 @@ def context_windows(provenance: dict, rows: list[dict], texts: dict[int, str], m
 
 
 def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
-    deadline = time.monotonic() + args.budget
+    deadline = getattr(args, '_hydration_deadline', time.monotonic() + args.budget)
     cmd = ['hydrate', '--unit-id', args.unit_id, '--neighbors', '0' if metadata_only else str(args.context)]
     cmd += ['--metadata-only'] if metadata_only else ['--max-chars', str(args.max_chars)]
     if args.generation: cmd += ['--generation', args.generation]
-    data, attempt = generic_run(st, cmd, args.budget)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return {'status': 'hydration-unavailable', 'attempt': {'failure': 'hydration-deadline-exceeded'}}
+    data, attempt = generic_run(st, cmd, remaining)
     if not data:
         return {'status': 'parent-resolution-unavailable' if metadata_only else 'hydration-unavailable', 'attempt': attempt}
     provenance = generic_provenance(st, data.get('provenance'))
@@ -732,6 +740,271 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
         result['context_incomplete'] = bool(result.get('window_gap')) or bool(result['excluded_context']) or any(
             row.get('truncated') and not intentional_control_omission(row)
             for row in result['messages'])
+        if provenance.get('platform') == 'discord' and provenance.get('kind') == 'conversation':
+            result['original_episode'] = original_episode(st, args, result, deadline)
+    return result
+
+
+def original_resolver_module():
+    raw = ORIGINAL_RESOLVER.read_bytes()
+    if ORIGINAL_RESOLVER.is_symlink() or hashlib.sha256(raw).hexdigest() != ORIGINAL_RESOLVER_SHA:
+        raise ValueError('original resolver code pin differs')
+    module = types.ModuleType('pye_original_episode_resolver')
+    module.__file__ = str(ORIGINAL_RESOLVER)
+    exec(compile(raw, str(ORIGINAL_RESOLVER), 'exec'), module.__dict__)
+    return module
+
+
+def original_episode(st: dict, args, normalized: dict, deadline: float) -> dict:
+    """Verify original parents, then render a bounded separate source episode."""
+    remaining_chars = max(0, args.max_chars - sum(len(row.get('text', '')) for row in normalized['messages']))
+    result = {'status': 'unavailable', 'messages': [], 'mapping_complete': False,
+              'displayed_selected_parent_ids': [], 'unresolved_parent_ids': [],
+              'selected_parent_truncated_ids': [], 'unresolved_reply_ids': [],
+              'cutoff_eligible_parent_ids': [], 'cutoff_unavailable_parent_ids': [],
+              'cutoff_availability_complete': False,
+              'context_incomplete': True, 'text_budget_remaining_at_start': remaining_chars,
+              'text_characters_returned': 0, 'cutoff': 'not-requested' if getattr(args, 'cutoff', None) is None else args.cutoff,
+              'namespace': 'discord-original-capture', 'resolver_attempted': False,
+              'qualifiers': ['Original captures supplement normalized context; frozen/effective provenance remains unchanged.',
+                  'Source match does not establish belief adoption or prove historical content availability.',
+                  'Only effective selected parents can retain qualified owner evidence; neighboring rows are context.']}
+    if time.monotonic() >= deadline:
+        result.update(status='deferred', diagnostic='original-episode-deadline-exhausted')
+        return result
+    try:
+        resolver = original_resolver_module()
+        provenance = generic_provenance(st, normalized['provenance'])
+        parents = provenance['parents']
+        resolver.require(0 < len(parents) <= resolver.PARENT_LIMIT, 'original-episode-parent-count-over-limit')
+        targets = {}
+        for parent in parents:
+            mid = resolver.identifier(parent.get('message_id'))
+            resolver.identifier((parent.get('author') or {}).get('id'))
+            resolver.instant(parent.get('timestamp'))
+            resolver.require(isinstance(parent.get('text_sha256'), str) and resolver.SHA.fullmatch(parent['text_sha256']),
+                             'original-episode-parent-hash-invalid')
+            if mid in targets:
+                resolver.require(all(targets[mid].get(key) == parent.get(key) for key in ('text_sha256', 'timestamp', 'author')),
+                                 'original-episode-parent-binding-conflict')
+            targets[mid] = parent
+        result['unresolved_parent_ids'] = list(targets)
+        cutoff = resolver.instant(args.cutoff) if getattr(args, 'cutoff', None) is not None else None
+        common = resolver.load_pinned(resolver.COMMON, resolver.COMMON_SHA, 'pye_original_episode_common')
+        captures = {}
+        def remember_capture(export, pin):
+            captures[(pin['path'], pin['sha256'])] = (export, pin)
+        io = types.SimpleNamespace(guarded=guarded, restricted=restricted, source_path=source_path,
+            generic_provenance=generic_provenance, normalized_message_view=normalized_message_view,
+            verified_capture=remember_capture)
+        read_state = {'deadline': deadline, 'bytes_read': 0}
+        source = provenance['source']
+        resolver.require(isinstance(source.get('archive_path'), str), 'original-episode-primary-locator-unavailable')
+        expected_source_sha = source.get('source_sha256')
+        resolver.require(expected_source_sha is None or (isinstance(expected_source_sha, str)
+                         and resolver.SHA.fullmatch(expected_source_sha)), 'original-episode-primary-proof-invalid')
+        path = resolver.original_path(st, source['archive_path'], io)
+        retry = False
+        try:
+            raw, pin = resolver.read_source(path, io, read_state, 32 * 1024 * 1024)
+        except OSError as error:
+            if error.errno not in (errno.ENOENT, errno.ENOTDIR):
+                raise
+            retry = True
+            result['primary_capture_status'] = 'missing'
+        if not retry:
+            result['primary_capture_pin'] = pin
+            if expected_source_sha is not None and pin['sha256'] != expected_source_sha:
+                del raw
+                retry = True
+                result['primary_capture_status'] = 'stale-file-hash'
+            else:
+                export = resolver.strict_json(raw)
+                del raw
+                messages = export.get('messages')
+                resolver.require(isinstance(messages, list) and len(messages) <= resolver.MESSAGE_LIMIT,
+                                 'original-episode-message-container-invalid')
+                channel = (export.get('channel') or {}).get('id')
+                declared_channel = source.get('channel_id')
+                if declared_channel is None:
+                    match = re.search(r'(?:\[|/)([0-9]{15,25})(?:\]\.json|\.json)$', source['archive_path'])
+                    declared_channel = match.group(1) if match else None
+                if declared_channel is not None:
+                    resolver.require(resolver.identifier(channel) == resolver.identifier(declared_channel),
+                                     'original-episode-channel-binding-invalid')
+                found = {}
+                seen_selected = set()
+                for index, message in enumerate(messages):
+                    resolver.checkpoint(read_state)
+                    resolver.require(isinstance(message, dict), 'original-episode-message-object-invalid')
+                    mid = str(message.get('id')) if type(message.get('id')) is int else message.get('id')
+                    if isinstance(mid, str) and mid in targets:
+                        resolver.require(mid not in seen_selected, 'original-episode-duplicate-parent-id')
+                        seen_selected.add(mid)
+                        resolver.require(resolver.allowed_message(message, st, io, common),
+                                         'original-episode-parent-excluded')
+                        parent = targets[mid]
+                        text = message.get('content')
+                        resolver.require(isinstance(text, str), 'original-episode-parent-content-invalid')
+                        if (hashlib.sha256(text.encode('utf-8')).hexdigest() == parent['text_sha256']
+                                and resolver.identifier((message.get('author') or {}).get('id')) ==
+                                    resolver.identifier((parent.get('author') or {}).get('id'))
+                                and resolver.instant(message.get('timestamp')) == resolver.instant(parent['timestamp'])):
+                            found[mid] = index
+                if set(found) != set(targets):
+                    del export, messages
+                    retry = True
+                    result['primary_capture_status'] = 'missing-or-stale-selected-parents'
+                else:
+                    result['primary_capture_status'] = 'selected-parents-verified'
+                    result['primary_capture_binding'] = ('matched preexisting published source SHA' if expected_source_sha is not None
+                        else 'fresh stable source SHA plus every selected parent match; no preexisting source-file SHA available')
+                    result['preexisting_primary_source_hash_verified'] = expected_source_sha is not None
+                    remember_capture(export, pin)
+                    mappings = {mid: {'source': pin['path'], 'source_sha256': pin['sha256'],
+                        'original_json_pointer': f'/messages/{index}', 'original_parent_match_verified': True,
+                        'text_sha256': targets[mid]['text_sha256'],
+                        'actor_id': resolver.identifier((targets[mid].get('author') or {}).get('id')),
+                        'timestamp': targets[mid]['timestamp']} for mid, index in found.items()}
+        if retry:
+            remaining_time = deadline - time.monotonic()
+            if remaining_time < 1:
+                result.update(status='deferred', diagnostic='original-episode-resolver-budget-unavailable')
+                return result
+            result['resolver_attempted'] = True
+            io.bytes_already_read = read_state['bytes_read']
+            resolved = resolver.resolve_original_parents(st, provenance, cutoff=None,
+                budget=min(remaining_time, 120), helper_io=io,
+                helper_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+            result['resolution'] = resolved
+            if not resolved.get('coverage_complete'):
+                result.update(status='partial-mapping', unresolved_parent_ids=resolved.get('unresolved_parent_ids', list(targets)))
+                return result
+            shared = resolved.get('shared_matching_capture_versions', [])
+            pair = (shared[0]['source'], shared[0]['source_sha256']) if shared else None
+            mappings = {}
+            for entry in resolved['mappings']:
+                candidates = entry['matching_captures']
+                chosen = next((candidate for candidate in candidates if
+                    (candidate['source'], candidate['source_sha256']) == pair), candidates[0])
+                mappings[entry['message_id']] = chosen
+            result['capture_selection'] = 'verified shared source+SHA' if shared else 'explicit per-parent verified sources'
+        for mid, mapping in mappings.items():
+            pair = (mapping['source'], mapping['source_sha256'])
+            resolver.require(pair in captures, 'original-episode-verified-capture-cache-unavailable')
+            export, _ = captures[pair]
+            index = int(mapping['original_json_pointer'].rsplit('/', 1)[-1])
+            original = export['messages'][index]
+            scope = resolver.edit_scope(original, resolver.instant(original.get('timestamp')), cutoff)
+            mapping['cutoff_scope'] = scope
+            if scope['cutoff_decision'].startswith('exclude-') or scope['cutoff_decision'] == 'unknown-edit-history':
+                result['cutoff_unavailable_parent_ids'].append(mid)
+            else:
+                result['cutoff_eligible_parent_ids'].append(mid)
+        result.update(mapping_complete=True, unresolved_parent_ids=[], status='bounded-original-episode',
+                      parent_mappings=mappings, mapping_scope='identity/content/actor/time; cutoff availability is separate',
+                      cutoff_availability_complete=not result['cutoff_unavailable_parent_ids'])
+        if remaining_chars == 0:
+            result.update(status='deferred-display', diagnostic='original-episode-text-budget-exhausted')
+            return result
+        groups = {}
+        for mid, mapping in mappings.items():
+            groups.setdefault((mapping['source'], mapping['source_sha256']), []).append(mid)
+        displayed = set()
+        cutoff_skipped = []
+        invalid_neighbor_indices = []
+        source_windows = []
+        for pair, selected in groups.items():
+            if time.monotonic() >= deadline or remaining_chars <= 0:
+                break
+            resolver.require(pair in captures, 'original-episode-verified-capture-cache-unavailable')
+            export, pin = captures[pair]
+            messages = export['messages']
+            mapped_indices = {mid: int(mappings[mid]['original_json_pointer'].rsplit('/', 1)[-1]) for mid in selected}
+            indices = sorted({index for mid in selected for index in
+                range(max(0, mapped_indices[mid] - args.context), min(len(messages), mapped_indices[mid] + args.context + 1))})
+            eligible_indices = []
+            for index in indices:
+                message = messages[index]
+                if (pin['sha256'], str(message.get('id'))) in displayed:
+                    continue
+                try:
+                    mid = resolver.identifier(message.get('id'))
+                    author = message.get('author')
+                    resolver.require(isinstance(author, dict), 'original-episode-neighbor-actor-invalid')
+                    resolver.identifier(author.get('id'))
+                    scope = resolver.edit_scope(message, resolver.instant(message.get('timestamp')), cutoff)
+                except (resolver.ResolveError, AttributeError, TypeError):
+                    invalid_neighbor_indices.append({'source_sha256': pin['sha256'], 'message_index': index})
+                    continue
+                if scope['cutoff_decision'].startswith('exclude-') or scope['cutoff_decision'] == 'unknown-edit-history':
+                    cutoff_skipped.append(mid)
+                    continue
+                eligible_indices.append(index)
+            episode_args = argparse.Namespace(message_id=selected[0], context=args.context, max_chars=remaining_chars,
+                version=None, _target_index=mapped_indices[selected[0]],
+                _context_indices=eligible_indices, _context_deadline=deadline,
+                _strict_context_text=True)
+            window = _discord_original_context(st, episode_args, export, Path(pin['path']), pin['sha256'])
+            source_windows.append({key: value for key, value in window.items() if key != 'messages'})
+            for row in window['messages']:
+                key = (pin['sha256'], row['message_id'])
+                if key in displayed:
+                    continue
+                displayed.add(key)
+                original = messages[int(row['json_pointer'].rsplit('/', 1)[-1])]
+                mapping = mappings.get(row['message_id'])
+                parent = targets.get(row['message_id'])
+                selected_verified = bool(mapping and parent
+                    and mapping['source'] == pin['path'] and mapping['source_sha256'] == pin['sha256']
+                    and mapping['original_json_pointer'] == row['json_pointer']
+                    and hashlib.sha256(original['content'].encode('utf-8')).hexdigest() == parent['text_sha256']
+                    and resolver.identifier(original['author']['id']) == resolver.identifier(parent['author']['id'])
+                    and resolver.instant(original['timestamp']) == resolver.instant(parent['timestamp']))
+                row.update(source=pin['path'], source_sha256=pin['sha256'],
+                           source_namespace='discord-original-capture', matched_selected_parent=selected_verified,
+                           primary_owner_evidence=False)
+                if selected_verified:
+                    row.update(normalized_parent_text_sha256=parent['text_sha256'],
+                        effective_parent_attribution_class=parent.get('attribution_class'),
+                        primary_owner_evidence=(parent.get('attribution_class') == 'self'
+                            and parent.get('primary_owner_evidence') is not False
+                            and provenance.get('role') == 'self' and provenance.get('primary_owner_evidence') is not False),
+                        original_parent_match_verified=True)
+                    result['displayed_selected_parent_ids'].append(row['message_id'])
+                    if row['truncated']:
+                        result['selected_parent_truncated_ids'].append(row['message_id'])
+                row['original_text_sha256'] = hashlib.sha256(original['content'].encode('utf-8')).hexdigest()
+                reference = original.get('reference')
+                reply = reference.get('messageId') if isinstance(reference, dict) else original.get('reply_to')
+                if reply is not None:
+                    try:
+                        row['reply_to'] = resolver.identifier(reply)
+                    except resolver.ResolveError:
+                        row['reply_reference_state'] = 'invalid-or-unsupported'
+                row['cutoff_scope'] = resolver.edit_scope(original, resolver.instant(original.get('timestamp')), cutoff)
+                result['messages'].append(row)
+                remaining_chars -= len(row['text'])
+        present = {row['message_id'] for row in result['messages']}
+        selected_present = set(result['displayed_selected_parent_ids'])
+        result.update(text_characters_returned=sum(len(row['text']) for row in result['messages']),
+            source_windows=source_windows, cutoff_unavailable_message_ids=cutoff_skipped,
+            invalid_neighbor_indices=invalid_neighbor_indices,
+            undisplayed_selected_parent_ids=[mid for mid in targets if mid not in selected_present],
+            unresolved_reply_ids=sorted({row['reply_to'] for row in result['messages']
+                                        if row.get('reply_to') and row['reply_to'] not in present}))
+        result['context_incomplete'] = (bool(result['undisplayed_selected_parent_ids'])
+            or bool(cutoff_skipped) or bool(result['unresolved_reply_ids'])
+            or bool(invalid_neighbor_indices) or bool(result['cutoff_unavailable_parent_ids'])
+            or any(row.get('truncated') or row.get('reply_reference_state') == 'invalid-or-unsupported' for row in result['messages'])
+            or any(window.get('context_deferred_by_deadline') or window.get('context_budget_exhausted')
+                   or window.get('excluded_rows')
+                   for window in source_windows))
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, ImportError, AttributeError, RecursionError) as error:
+        result.update(status='unavailable', diagnostic=str(error) if type(error).__name__ == 'ResolveError'
+                      else 'original-episode-source-unavailable', context_incomplete=True)
+    finally:
+        result['text_characters_returned'] = sum(len(row['text']) for row in result['messages'])
     return result
 
 
@@ -997,9 +1270,19 @@ def _primary_hydrate(st: dict, args) -> dict:
     if p.suffix.lower() != '.json': raise ValueError('automatic hydration supports Discord JSON only; use the documented bounded original reader for other formats')
     raw = p.read_bytes(); source_hash = hashlib.sha256(raw).hexdigest()
     if args.source_sha256 and source_hash != args.source_sha256: raise ValueError('original changed since the indexed lead; reindex or recover exact version')
-    data = json.loads(raw); messages = data.get('messages', [])
+    data = json.loads(raw)
+    return _discord_original_context(st, args, data, p, source_hash)
+
+
+def _discord_original_context(st: dict, args, data: dict, p: Path, source_hash: str) -> dict:
+    """Render the existing original window from one already verified capture."""
+    messages = data.get('messages', [])
     if not isinstance(messages, list): raise ValueError('original has no Discord message array')
-    target = next((i for i,m in enumerate(messages) if str(m.get('id')) == args.message_id), None)
+    target = getattr(args, '_target_index', None)
+    if target is None:
+        target = next((i for i,m in enumerate(messages) if isinstance(m, dict) and str(m.get('id')) == args.message_id), None)
+    elif type(target) is not int or not 0 <= target < len(messages) or str(messages[target].get('id')) != args.message_id:
+        raise ValueError('original target index does not match selected message')
     if target is None: raise ValueError('message ID not found; no excerpt returned')
     sensitive_ids = set(st['access'].get('excluded_message_ids', []))
     excluded_ids = set(st['access'].get('excluded_author_ids', []))
@@ -1008,32 +1291,49 @@ def _primary_hydrate(st: dict, args) -> dict:
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     excluded_ids.update(mod.EXCLUDED_IDS); names = mod.EXCLUDED_NAMES
     target_row = messages[target]
-    semantic_spec = importlib.util.spec_from_file_location('semantic_exclusions', Path(__file__).with_name('semantic_retrieve.py'))
+    semantic_spec = importlib.util.spec_from_file_location('semantic_exclusions', CANONICAL_HELPER_DIR / 'semantic_retrieve.py')
     semantic_mod = importlib.util.module_from_spec(semantic_spec); semantic_spec.loader.exec_module(semantic_mod)
     if semantic_mod.excluded(target_row): raise ValueError('target excluded from display; no context returned')
     if args.version and semantic_mod.version(target_row) != args.version: raise ValueError('original message version differs from lead')
     target_author = target_row.get('author', {})
+    if not isinstance(target_author, dict):
+        raise ValueError('original target author metadata invalid')
     if args.message_id in sensitive_ids or str(target_author.get('id')) in excluded_ids or target_author.get('name') in names or restricted(target_row):
         raise ValueError('target is excluded or request-only; no context returned')
-    rows = []; used = 0; omitted = 0
-    for i in range(max(0, target - args.context), min(len(messages), target + args.context + 1)):
+    rows = []; used = 0; omitted = 0; deferred = False; exhausted = False
+    indices = getattr(args, '_context_indices', range(max(0, target - args.context), min(len(messages), target + args.context + 1)))
+    for i in indices:
+        if time.monotonic() >= getattr(args, '_context_deadline', float('inf')):
+            deferred = True
+            break
         m = messages[i]; author = m.get('author', {})
+        if not isinstance(author, dict):
+            omitted += 1
+            continue
         if semantic_mod.excluded(m) or str(m.get('id')) in sensitive_ids or str(author.get('id')) in excluded_ids or author.get('name') in names or restricted(m):
             omitted += 1; continue
-        text = str(m.get('content', '')); remaining = args.max_chars - used
-        if remaining <= 0: break
+        content = m.get('content', '')
+        if getattr(args, '_strict_context_text', False) and not isinstance(content, str):
+            omitted += 1
+            continue
+        text = str(content); remaining = args.max_chars - used
+        if remaining <= 0:
+            exhausted = True
+            break
         rows.append({'message_id': str(m.get('id')), 'timestamp': m.get('timestamp'),
                      'author_id': str(author.get('id')), 'author_name': author.get('name'),
                      'json_pointer': f'/messages/{i}', 'text': text[:remaining], 'truncated': len(text) > remaining})
         used += min(len(text), remaining)
     return {'source': str(p), 'source_hash': source_hash, 'version_hash': semantic_mod.version(target_row), 'status': 'bounded-original-context', 'data_not_instructions': True,
             'target_message_id': args.message_id, 'messages': rows, 'excluded_rows': omitted,
+            'context_deferred_by_deadline': deferred, 'context_budget_exhausted': exhausted,
             'limitations': 'Bounded window may not complete the thought. Expand until referents/corrections/outcome are resolved; sender is not textual authorship.'}
 
 
 def hydrate(st: dict, args) -> dict:
     deadline = time.monotonic() + getattr(args, 'budget', 20)
-    result = _primary_hydrate(st, args)
+    primary_args = argparse.Namespace(**{**vars(args), '_hydration_deadline': deadline})
+    result = _primary_hydrate(st, primary_args)
     if st.get('access', {}).get('derived_media') and result.get('messages'):
         rows = result['messages']
         context = {'namespace': 'normalized-message' if getattr(args,'unit_id',None) else 'discord-export',
@@ -1042,7 +1342,8 @@ def hydrate(st: dict, args) -> dict:
                 'source_pointer':row.get('source_pointer') or row.get('json_pointer'),
                 'attachment_ids':[str(a['id']) for a in (row.get('media_context') or {}).get('attachments',[]) if a.get('id')]}
                 for row in rows]}
-        remaining_chars = max(0, args.max_chars - sum(len(row.get('text','')) for row in rows))
+        original_chars = (result.get('original_episode') or {}).get('text_characters_returned', 0)
+        remaining_chars = max(0, args.max_chars - sum(len(row.get('text','')) for row in rows) - original_chars)
         remaining_time = deadline - time.monotonic()
         if remaining_time >= 1:
             result['derived_media'] = derived_media_call(st,
