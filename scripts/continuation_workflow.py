@@ -67,12 +67,19 @@ framing unsupported by the CURRENT purpose; morality is valid when actually requ
 Clearly proposed fictional motivations and creative details are allowed.
 When selection is empty, offer an explicitly source-limited creative proposal.''',
     'critic': '''Return {"pass":boolean,"findings":[{"material":boolean,
-"issue":string,"source_handles":[context JSON pointer or available hydrated unit_id],
+"issue":string,"source_handles":[exact handle_catalog key],
 "requested_change":string}]}. Judge usefulness against the CURRENT request, purpose,
 changes/withdrawals and source, not verbosity, formatting conformity or explaining
 everything. Check domain/craft, local scope, intended reader experience, primary versus
 optional elements and relevant interaction patterns/counterexamples. Check unsupported
 certainty, adoption, motives, requirements and emotional/procedural objective drift.
+Inspect internal chronology, causality, action and state consistency. Statements about
+previous choices, responses or events require support under the conditions where
+they are uttered; aggregate encounter counts do not establish specific interaction
+history. Contradicting the primary purpose, current changes or an actual prior action
+is a MATERIAL issue. Failure of an explicit intended experience is also MATERIAL.
+Clearly proposed reversible creative details remain allowed; judge their consistency
+and contribution to the current purpose without imposing blanket prohibitions.
 Pass only if no material issues remain; a rejection requires a material finding.
 This is an unverified model judgment, not objective success or owner acceptance.''',
     'revision': '''Return {"artifact":string,"source_basis":[selected unit_id],
@@ -110,8 +117,8 @@ JSON_SCHEMAS = {
     'revision': _ARTIFACT_SCHEMA,
     'critic': object_schema({'pass': {'type': 'boolean'}, 'findings': {'type': 'array', 'maxItems': 12,
         'items': object_schema({'material': {'type': 'boolean'}, 'issue': _TEXT,
-            'source_handles': {'type': 'array', 'maxItems': 12, 'items': {'anyOf': [_UID,
-                {'type': 'string', 'pattern': '^/', 'maxLength': 512}]}},
+            'source_handles': {'type': 'array', 'maxItems': 12,
+                               'items': {'type': 'string', 'maxLength': 128}},
             'requested_change': _TEXT})}}),
 }
 
@@ -228,6 +235,71 @@ def receipt_qualifications(packet, value):
     return value
 
 
+def critic_handle_catalog(context, units, applicability=None, draft=None):
+    catalog = {}
+    if isinstance(context.get('current_request'), dict):
+        catalog['current-request'] = {'meaning': 'Current caller request and its qualifications',
+                                     'binding': 'context.current_request'}
+        for index, _ in enumerate(context['current_request'].get('corrections', [])):
+            catalog['current-correction-' + str(index)] = {
+                'meaning': 'Current correction; takes precedence over older proposals',
+                'binding': 'context.current_request.corrections', 'index': index}
+    for handle, key in (('saved-task', 'current_record'), ('saved-artifact', 'selected_artifact'),
+                        ('saved-accounts', 'source_accounts')):
+        value = context.get(key)
+        if value is not None and (key != 'selected_artifact' or value.get('status') == 'read'):
+            catalog[handle] = {'meaning': 'Saved qualified context; not new historical evidence',
+                               'binding': 'context.' + key}
+    if applicability is not None:
+        catalog['applicability'] = {'meaning': 'Revisable applicability model decision', 'binding': 'applicability'}
+    if draft is not None:
+        catalog['draft'] = {'meaning': 'Actual proposed artifact under review', 'binding': 'draft'}
+    for uid in units:
+        catalog[uid] = {'meaning': 'Available hydrated source unit with original qualifications',
+                        'binding': 'context.canonical_evidence.packet.discovery_originals', 'unit_id': uid}
+    return catalog
+
+
+def stage_schema(stage, catalog=None):
+    schema = json.loads(json.dumps(JSON_SCHEMAS[stage]))
+    if stage == 'critic':
+        if (not isinstance(catalog, dict) or not catalog or len(catalog) > 64
+                or any(not isinstance(key, str) or len(key) > 128 for key in catalog)):
+            raise WorkflowError('critic-handle-catalog-invalid')
+        schema['properties']['findings']['items']['properties']['source_handles']['items'] = {
+            'type': 'string', 'enum': list(catalog)}
+    return schema
+
+
+def invalid_critic_candidate(response):
+    """Keep bounded known findings for diagnosis, never as an accepted verdict."""
+    candidate = {'status': 'INVALID', 'judgment': 'unverified response; validation failed'}
+    if not isinstance(response, dict):
+        return candidate
+    if type(response.get('pass')) is bool:
+        candidate['pass'] = response['pass']
+    findings = response.get('findings')
+    if isinstance(findings, list):
+        candidate['findings'] = []
+        candidate['omitted_finding_count'] = max(0, len(findings) - 12)
+        for finding in findings[:12]:
+            if not isinstance(finding, dict):
+                continue
+            clean = {}
+            if type(finding.get('material')) is bool:
+                clean['material'] = finding['material']
+            for key in ('issue', 'requested_change'):
+                value = finding.get(key)
+                if isinstance(value, str) and len(value) <= 8192:
+                    clean[key] = value
+            handles = finding.get('source_handles')
+            if isinstance(handles, list):
+                clean['source_handles'] = [handle for handle in handles[:12]
+                                           if isinstance(handle, str) and len(handle) <= 512]
+            candidate['findings'].append(clean)
+    return candidate
+
+
 def string(value, limit=8192, empty=False):
     if not isinstance(value, str) or len(value) > limit or (not empty and not value.strip()):
         raise WorkflowError('stage-string-schema-invalid')
@@ -245,7 +317,7 @@ def exact_keys(value, expected):
         raise WorkflowError('stage-object-keys-invalid')
 
 
-def validate(stage, data, context, units, selected=()):
+def validate(stage, data, context, units, selected=(), handle_catalog=None):
     if not isinstance(data, dict):
         raise WorkflowError('stage-response-not-object')
     if stage == 'applicability':
@@ -298,9 +370,10 @@ def validate(stage, data, context, units, selected=()):
             exact_keys(finding, ('material', 'issue', 'source_handles', 'requested_change'))
             string(finding.get('issue'))
             string(finding.get('requested_change'))
+            catalog = handle_catalog if handle_catalog is not None else critic_handle_catalog(context, units)
             for handle in strings(finding.get('source_handles'), 12):
-                if handle not in units:
-                    pointer(context, handle)
+                if handle not in catalog:
+                    raise WorkflowError('critic-source-handle-not-in-catalog')
             material = material or finding['material']
         if data['pass'] == material:
             raise WorkflowError('critic-verdict-contradicts-material-findings')
@@ -331,8 +404,13 @@ def native_call(prompt, timeout, compiler, stage):
     failure = None
     started = time.monotonic()
     try:
+        catalog = None
+        if stage == 'critic':
+            payload = compiler.parse_json(prompt.partition('\n\nDATA:\n')[2])
+            catalog = payload.get('handle_catalog') if isinstance(payload, dict) else None
+        schema = stage_schema(stage, catalog)
         owned = compiler.OwnedChildren()
-        proc = subprocess.Popen([executable, *NATIVE_ARGS, '--json-schema', encoded(JSON_SCHEMAS[stage]).decode()], stdin=subprocess.PIPE,
+        proc = subprocess.Popen([executable, *NATIVE_ARGS, '--json-schema', encoded(schema).decode()], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         receipt.update(attempted=True, entrypoint=executable)
         os.set_blocking(proc.stdin.fileno(), False)
@@ -426,6 +504,9 @@ def run_workflow(args, compiler, invoke=native_call):
         result['context'] = context
 
     def call(stage, payload):
+        if stage == 'critic':
+            payload = {**payload, 'handle_catalog': critic_handle_catalog(
+                context, units, payload.get('applicability'), payload.get('draft'))}
         prompt = RULES + '\n\nSTAGE: ' + stage + '\n' + SCHEMAS[stage] + '\n\nDATA:\n' + encoded(payload).decode()
         response, receipt = invoke(prompt, native_timeout, compiler, stage)
         receipt = {**receipt, 'stage': stage, 'judgment': 'unverified-model-output'}
@@ -433,9 +514,12 @@ def run_workflow(args, compiler, invoke=native_call):
         if response is None:
             raise WorkflowError(receipt.get('error', 'native-stage-failed'))
         try:
-            return validate(stage, response, context, units, selected)
-        except WorkflowError:
+            return validate(stage, response, context, units, selected, payload.get('handle_catalog'))
+        except WorkflowError as error:
             receipt.update(status='invalid-schema', error='stage-schema-or-source-handles-invalid')
+            if stage == 'critic':
+                result['invalid_critic_candidate'] = {**invalid_critic_candidate(response),
+                                                      'validation_error': str(error)}
             raise
 
     try:

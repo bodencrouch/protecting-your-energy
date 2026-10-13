@@ -26,13 +26,21 @@ saved artifact/accounts with their original qualifications, and only the selecte
 source units. Existing text/path/actor/media/table references are resolved into
 self-contained source bundles in RAM. Unselected units, unrelated leads and
 generated prior interpretations are excluded from the writer source bundle.
-The critic can inspect the full original compiler context, and its finding handles
-can identify available hydrated units or valid context JSON pointers. Writers
+The critic can inspect the full original compiler context. Its runtime handle
+catalog identifies the current request, each current correction, available saved
+context, applicability, draft and exact available hydrated unit IDs. Native JSON
+schema and local validation enforce the same closed catalog; findings cannot
+invent pointers or guess context paths. Writers
 cannot add unselected unit IDs or extra fields through stage responses.
 
 Criticism checks current purpose, changes/withdrawals, usefulness, unsupported
 certainty/adoption/motives/requirements and emotional versus procedural objective
 where relevant. It does not judge conformity to verbosity or format preferences.
+It checks internal chronology, causality, actions and state, including whether
+claims about previous choices/responses/events hold under their stated conditions.
+Aggregate encounter counts do not establish a specific interaction history.
+Contradictions of prior actions, current changes or primary purpose, and failures
+of an explicitly intended experience, are material findings.
 Relevant experienced interaction patterns can inform work without factual verdicts
 about disputes. Reversible creative choices remain proposed choices; uncertainty
 does not automatically prohibit a useful artifact.
@@ -46,6 +54,9 @@ and selected sources, followed by one final critic. Maximum five native calls;
 there is no further repair loop. Rejection or invalid schema returns `not-accepted`,
 the latest available draft and diagnostics. A pass returns `proposed-model-pass`:
 the critic is an unverified model verdict, not owner acceptance or objective success.
+If critic validation fails, bounded known candidate fields and the validation
+diagnostic are retained as explicitly `INVALID` unverified output. Extra response
+keys are excluded, and that candidate cannot authorize acceptance or revision.
 Generation follows the current local scope and targets a useful first artifact
 under 16 KiB unless the request explicitly requires more; the hard cap remains
 128 KiB. A cue does not authorize expanding the deliverable into an entire project.
