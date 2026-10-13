@@ -1,6 +1,6 @@
 ---
 name: protecting-your-energy
-description: Turn a rough request or scattered reasoning into the useful next result, reducing repeated explanation, communication overhead, effort overruns and missed opportunities. Use for personal workflow assistance or an explicit energy review.
+description: Turn a rough request or scattered reasoning into the useful next result, reducing repeated explanation, communication overhead, effort overruns and missed opportunities. Use when writing, creative work or project continuation depends on earlier thinking, context or corrections, and for personal workflow assistance or an explicit energy review.
 ---
 
 # Protect Your Energy
@@ -30,6 +30,22 @@ supported responsibility from available context; report the missing mechanism
 only when it prevents delivery. Do not ask the owner to repair routing.
 
 ## Bind the intention
+
+For a request that depends on earlier work, prepare resumed context with
+`python3 scripts/continuation.py` from this plugin's root. Pass the rough request as one
+argument; use the current conversation to resolve any ambiguous task candidates.
+The executable route is documented in
+[continuation access](../../references/continuation-access.md). It keeps incoming
+corrections separate from saved records and source evidence. A prepared packet is
+context for the work, not a completed result.
+
+Before generation, make a separate applicability decision about consequential
+historical context. Where independent agents are available, give that decision
+to a reader who is not generating the artifact. Carry forward applicable meaning,
+constraints and uncertainty; suppress unrelated episodes. Review the produced
+artifact against the intended result and latest corrections, then continue the
+authorized work. Do not infer acceptance or completed application behavior from
+a successful context command.
 
 When the request points to the owner's earlier thinking, use its wording as a
 retrieval cue. Recover the relevant original episodes and later corrections
