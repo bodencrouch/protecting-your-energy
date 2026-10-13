@@ -49,13 +49,25 @@ without saving it. Use it for detailed provenance inspection; a subsequent
 retrieval can return a different snapshot, so compare generation and packet
 receipts. Both views receive the final credential sanitizer.
 
-`--task-id ID` explicitly selects an existing continuity task. Otherwise task
+`--task-id ID` explicitly selects an existing continuity task before loading
+execution bindings. A bare `continue` or `resume`, with optional `please` and
+punctuation, can select an enabled association in the task's `execution_contexts`.
+Each association supplies `harness` (`codex` or `claude`), `context_id`, and a
+boolean `enabled`. Optional `basis` is metadata, not proof of identity or adoption.
+Use `--execution-harness` with `--execution-context-id` to supply the host context.
+Otherwise `CODEX_THREAD_ID`, when present, supplies only a Codex namespace.
+Missing context or no match retains the existing fallback; malformed or multiple
+associations refuse selection before source access. Source threads, timestamps,
+and proposal locators never create execution associations. This route adds no
+hook registration or semantic task inference.
+
+For substantive requests, task
 IDs and goals supply lexical candidates, labelled as lexical rather than
 semantic selection. A sole candidate qualifies only with at least two salient
 matches covering 75% of salient cue terms, or an explicit `continue`/`resume`
 marker with all salient cue terms matched. Weak and ambiguous candidates remain
 unselected. This lexical rule cannot establish semantic applicability. An unqualified
-resume returns selection guidance without dumping history. A substantive cue
+resume without a matching association returns selection guidance without dumping history. A substantive cue
 can retrieve evidence even when no saved task matches.
 
 The existing private configuration supplies the state path. Its containing

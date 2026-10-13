@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = 'aa46a005cb4b84d77a6c4c4e0f9837dc50df0dbc2a5a8c02461fd9cee6a17f09'
+COMPILER_SHA = '7929d2e4db60d784249545d815fa499c925c15132d475f9cd1ddc0152d54828f'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072
@@ -610,6 +610,8 @@ def main(argv=None):
     parser = compiler.SafeParser(description=__doc__)
     parser.add_argument('cue', nargs='+')
     parser.add_argument('--task-id')
+    parser.add_argument('--execution-harness', help='Select a host execution namespace for a bare resume')
+    parser.add_argument('--execution-context-id', help='Use an exact context ID with --execution-harness')
     parser.add_argument('--query', action='append', default=[])
     parser.add_argument('--probe', action='append', default=[])
     parser.add_argument('--unit-id', action='append', default=[])

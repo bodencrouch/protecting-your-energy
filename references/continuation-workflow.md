@@ -70,7 +70,8 @@ Generation follows the current local scope and targets a useful first artifact
 under 16 KiB unless the request explicitly requires more; the hard cap remains
 128 KiB. A cue does not authorize expanding the deliverable into an entire project.
 
-`--task-id`, repeated `--query`/`--unit-id`, repeated `--correction` and
+`--task-id`, paired `--execution-harness`/`--execution-context-id`, repeated
+`--query`/`--unit-id`, repeated `--correction` and
 `--corrections-stdin` use the compiler's existing bounds. Stdin accepts correction
 strings as a JSON list or `{"corrections": [...]}`. Optional repeated `--probe` accepts at most two provisional search
 hypotheses within the existing facet budget; see [retrieval probes](retrieval-probes.md).

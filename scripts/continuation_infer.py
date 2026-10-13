@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-WORKFLOW_SHA = 'a52605cad53ea8950f32cc0f491a0ecf1ddf89dd86d9870a61c87f2c91fb824f'
+WORKFLOW_SHA = '3083ea946cc9ccab507f34a0cfce8e5a873df09fa3b19efee5e5409af171673d'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
     'stage-object-keys-invalid', 'provisional-plan-memory-schema-invalid',
@@ -336,6 +336,8 @@ def main(argv=None):
     parser = compiler.SafeParser(description=__doc__)
     parser.add_argument('cue', nargs='*')
     parser.add_argument('--task-id')
+    parser.add_argument('--execution-harness', help='Select a host execution namespace for a bare resume')
+    parser.add_argument('--execution-context-id', help='Use an exact context ID with --execution-harness')
     parser.add_argument('--query', action='append', default=[])
     parser.add_argument('--unit-id', action='append', default=[])
     parser.add_argument('--correction', action='append', default=[])

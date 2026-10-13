@@ -27,6 +27,7 @@ DISPLAY_SHA = '1b255b77c5e5c5043f04e73753abf5516e717633a7cb6d172d3d0a092e6706f5'
 NATIVE_CONTEXT_SHA = '224064965aed00cb6dec46aa3ba177a0f9a2b07986894075c9236a3b509576b8'
 NATIVE_REFRESH_SHA = '266b269dc1e2114f89141cfb8e86d33df5b57f506b7dee06cd9aeed9ae4f901a'
 CHAT_PROPOSAL_SHA = '0430f17e6ee0926111fda04f040a6f04b164d88f55a591877dcde66064cd0128'
+EXECUTION_CONTEXT_SHA = '60040287a36429b06d693a7df52bf7023f516311a31307f0a752221fe7c12f25'
 BLOCKED = ('.sealed', '.sanitized', '.seal-', 'request-only', 'request_only',
            '.request-only', 'quarantine', 'credentials', '.staging')
 MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
@@ -70,6 +71,19 @@ def proposal_sources_module():
     module.__file__ = str(path)
     exec(compile(raw, str(path), 'exec'), module.__dict__)
     return module.load_proposal
+
+
+def execution_context_module():
+    path = Path(__file__).resolve().with_name('execution_context.py')
+    if path.is_symlink() or path.resolve().parent != Path(__file__).resolve().parent:
+        raise ContextError('execution-context-module-location-invalid')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != EXECUTION_CONTEXT_SHA:
+        raise ContextError('execution-context-module-hash-mismatch')
+    module = types.ModuleType('pye_execution_context')
+    module.__file__ = str(path)
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module.resolve_execution_context
 
 
 def native_sources_module():
@@ -261,6 +275,42 @@ def select_task(state, cue, task_id=None):
             'candidates': candidates[:12], 'candidate_count': len(candidates),
             'candidates_truncated': len(candidates) > 12,
             'available_task_count': len(rows), 'selection_option': '--task-id'}, None
+
+
+def is_bare_resume(cue):
+    """Recognize only a bounded bare resume, with optional polite punctuation."""
+    return (isinstance(cue, str) and len(cue) <= 4096 and not words(cue)
+            and bool(re.fullmatch(
+                r'\s*(?:please\s+)?(?:continue|resume)(?:\s+please)?[.!?…\s]*',
+                cue.casefold())))
+
+
+def select_for_request(state, cue, args):
+    """Use an explicit execution binding only for an unqualified resume."""
+    if args.task_id is not None:
+        return select_task(state, cue, args.task_id)
+    unqualified = is_bare_resume(cue)
+    if not unqualified:
+        return select_task(state, cue)
+    harness = getattr(args, 'execution_harness', None)
+    context_id = getattr(args, 'execution_context_id', None)
+    if harness is not None or context_id is not None:
+        if harness is None or context_id is None:
+            raise ContextError('explicit-execution-context-incomplete')
+    else:
+        context_id = os.environ.get('CODEX_THREAD_ID') or None
+        harness = 'codex' if context_id is not None else None
+    if harness is None and context_id is None:
+        return select_task(state, cue)
+    selection, row = execution_context_module()(
+        state, harness=harness, context_id=context_id, unqualified_resume=True)
+    if selection['status'] == 'not-applicable' and selection.get('lexical_fallback') is True:
+        return select_task(state, cue)
+    if selection['status'] == 'selected' and row is not None:
+        return selection, row
+    if selection['status'] == 'needs-selection':
+        raise ContextError('execution-association-ambiguous')
+    raise ContextError('execution-context-selection-invalid')
 
 
 def bounded_record(row, task_id, state_receipt):
@@ -869,7 +919,7 @@ def prepare_context(args):
         state_status = 'not-created'
     if not isinstance(state, dict) or state.get('version') != 1 or not isinstance(state.get('records'), dict):
         raise ContextError('continuity-state-schema-invalid')
-    selection, row = select_task(state, cue, args.task_id)
+    selection, row = select_for_request(state, cue, args)
     current_record = None
     artifact = {'status': 'not-selected', 'classification': 'artifact-proposal'}
     accounts = {'items': [], 'requested_count': 0, 'omitted_count': 0, 'account_limit': 3}
@@ -891,7 +941,7 @@ def prepare_context(args):
             'qualifiers': ['Context only; no finished artifact or task completion established.',
                            'Current request and corrections remain separate from saved accounts and source facts.',
                            'Native source records authenticate a refreshed captured snapshot; later appends and adoption remain unverified.',
-                           'Task selection is lexical and does not establish semantic applicability.',
+                           'Task selection uses explicit IDs, execution associations or lexical cues; semantic applicability is not established.',
                            'Saved artifact is a proposal; derived accounts are interpretations, not additional owner evidence.',
                            'Canonical packet retains attribution, coverage and limitations; retrieval is incomplete.',
                            'Source hashes and ranges describe pre-render bytes; credential rendering may change displayed text.',
@@ -941,6 +991,8 @@ def main(argv=None):
     parser = SafeParser(description=__doc__)
     parser.add_argument('cue', nargs='+', help='Current ordinary request or rough retrieval cue')
     parser.add_argument('--task-id', help='Select one existing task explicitly')
+    parser.add_argument('--execution-harness', help='Host-supplied codex or claude execution association for an unqualified resume')
+    parser.add_argument('--execution-context-id', help='Exact host-supplied execution context ID; pair with --execution-harness')
     parser.add_argument('--query', action='append', default=[], help='Forward an exact retrieval facet; at most six')
     parser.add_argument('--probe', action='append', default=[], help='Supply a provisional search hypothesis; at most two')
     parser.add_argument('--unit-id', action='append', default=[], help='Forward a lowercase SHA256 source anchor; at most six')
