@@ -50,7 +50,11 @@ Fictional motivations, unreliable character beliefs and autonomous fictional
 choices are allowed as creative proposals. Keep established events and conditional
 prior actions consistent without inventing factual callbacks. An experiential
 goal must not become procedural prerequisites merely because those are easier to
-describe. Give the artifact, not instructions for someone else to make it. Return
+describe. Do not invent obligatory moral framing or permanent writer restrictions
+unsupported by the current purpose. A character's belief is not a narrator's verdict;
+indifference to one kind of reward does not establish indifference to relationships,
+purpose or loss. Preserve the requested felt stakes as well as observable outcomes.
+Give the artifact, not instructions for someone else to make it. Return
 only the JSON object matching the supplied schema.'''
 
 
