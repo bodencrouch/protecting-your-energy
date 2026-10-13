@@ -368,34 +368,139 @@ def text_slice(raw, receipt, section=None, char_limit=12000):
             'display_limit_characters': char_limit}
 
 
+def proposal_projection(native, section=None):
+    """Keep full authenticated native provenance when selecting decoded text."""
+    text = native['text'].encode('utf-8')
+    receipt = {'sha256': native['text_sha256'], 'bytes': len(text),
+               'hash_scope': 'UTF-8 output_text content concatenated without a separator',
+               'coordinate_scope': 'decoded proposal text; not native JSONL file offsets',
+               'native_source': native['source'],
+               'native_records': [{key: row.get(key) for key in (
+                   'message_id', 'timestamp', 'role', 'phase', 'byte_range',
+                   'record_sha256', 'text_sha256', 'full_record_checked')}
+                   for row in native['records']]}
+    return {'status': 'read', 'classification': 'assistant-artifact-proposal',
+            'owner_evidence': False, 'adoption_verified': False,
+            'task_completion_verified': False, 'qualifiers': native['qualifiers'],
+            **text_slice(text, receipt, section, char_limit=128 * 1024)}
+
+
+def proposal_row_keys(descriptor):
+    """Identify explicit row selections, without opening or scanning sources."""
+    if not isinstance(descriptor, dict):
+        raise ContextError('related-proposal-descriptor-invalid')
+    path, thread, records = (descriptor.get('original_native_file'),
+                             descriptor.get('thread_id'), descriptor.get('records'))
+    if (not isinstance(path, str) or not Path(path).is_absolute()
+            or not isinstance(thread, str) or not isinstance(records, list) or len(records) != 1):
+        raise ContextError('related-proposal-descriptor-invalid')
+    record = records[0]
+    if (not isinstance(record, dict) or type(record.get('byte_start')) is not int
+            or type(record.get('byte_end')) is not int
+            or not isinstance(record.get('record_sha256'), str)):
+        raise ContextError('related-proposal-descriptor-invalid')
+    return {('range', os.path.normpath(path), record['byte_start'], record['byte_end']),
+            ('record', thread, record['record_sha256'])}
+
+
+def related_proposals(current, primary, primary_bytes, loader, deadline):
+    """All-or-nothing explicit contextual proposals under a shared read budget."""
+    configured = 'related_chat_artifacts' in current
+    result = {'status': 'not-configured', 'configured': configured,
+              'required': configured, 'classification': 'assistant-contextual-proposals',
+              'items': [], 'owner_evidence': False, 'adoption_verified': False,
+              'task_completion_verified': False, 'item_limit': 3,
+              'combined_text_byte_limit': 128 * 1024,
+              'qualifiers': ['Explicit related assistant proposals remain separate from the primary artifact and owner evidence.',
+                             'Selection does not establish adoption, completion or narrative quality.',
+                             'The byte budget counts full authenticated text before section selection.',
+                             'No latest-answer scan or implicit association is performed.']}
+    if not configured:
+        return result
+    result['status'] = 'unavailable'
+    try:
+        wrappers = current['related_chat_artifacts']
+        if not isinstance(wrappers, list) or len(wrappers) > 3:
+            raise ContextError('related-proposal-collection-invalid')
+        chat = current.get('chat_artifact')
+        primary_configured = (isinstance(chat, dict) and 'native_proposal' in chat) or bool(current.get('artifact'))
+        if primary_configured and primary.get('status') != 'read':
+            raise ContextError('related-proposal-primary-unavailable')
+        seen_ids, seen_rows = set(), set()
+        if isinstance(chat, dict):
+            if isinstance(chat.get('id'), str):
+                seen_ids.add(chat['id'])
+            if 'native_proposal' in chat:
+                seen_rows.update(proposal_row_keys(chat['native_proposal']))
+        for wrapper in wrappers:
+            if (not isinstance(wrapper, dict)
+                    or set(wrapper) not in ({'id', 'role', 'native_proposal'},
+                                           {'id', 'role', 'native_proposal', 'section'})
+                    or not isinstance(wrapper['id'], str)
+                    or re.fullmatch('[A-Za-z0-9_.:-]{1,96}', wrapper['id']) is None
+                    or wrapper['role'] != 'contextual-proposal'):
+                raise ContextError('related-proposal-wrapper-invalid')
+            if 'section' in wrapper and (not isinstance(wrapper['section'], str)
+                                         or not wrapper['section'].strip() or len(wrapper['section']) > 512):
+                raise ContextError('related-proposal-section-invalid')
+            keys = proposal_row_keys(wrapper['native_proposal'])
+            if wrapper['id'] in seen_ids or seen_rows.intersection(keys):
+                raise ContextError('related-proposal-selection-duplicated')
+            seen_ids.add(wrapper['id'])
+            seen_rows.update(keys)
+        total = primary_bytes
+        if total > 128 * 1024:
+            raise ContextError('related-proposal-text-budget-exceeded')
+        items = []
+        for wrapper in wrappers:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ContextError('related-proposal-deadline-exceeded')
+            native = loader(wrapper['native_proposal'], guarded, deadline_seconds=min(30, remaining))
+            if native.get('status') != 'read':
+                raise ContextError('related-proposal-read-unavailable')
+            total += len(native['text'].encode('utf-8'))
+            if total > 128 * 1024:
+                raise ContextError('related-proposal-text-budget-exceeded')
+            items.append({'id': wrapper['id'], 'role': 'contextual-proposal',
+                          **proposal_projection(native, wrapper.get('section'))})
+        if time.monotonic() >= deadline:
+            raise ContextError('related-proposal-deadline-exceeded')
+        result.update(status='read', items=items, combined_authenticated_text_bytes=total,
+                      read_deadline_seconds=30,
+                      deadline_kind='shared cooperative checks between bounded reads; stalled kernel reads cannot be preempted')
+    except (ContextError, OSError, UnicodeError, ValueError, TypeError, KeyError, OverflowError):
+        result.update(status='unavailable', items=[], diagnostic='required-related-proposals-unavailable')
+    return result
+
+
 def derived_context(current, root):
     artifact = {'status': 'not-configured', 'classification': 'artifact-proposal'}
     accounts = []
     path, section = current.get('artifact'), current.get('artifact_section')
     chat = current.get('chat_artifact')
     configured_proposal = isinstance(chat, dict) and 'native_proposal' in chat
+    collection_configured = 'related_chat_artifacts' in current
+    deadline = time.monotonic() + 30
+    primary_bytes = 0
+    loader = None
     if configured_proposal:
         artifact.update(status='unavailable', configured=True, required=True,
                         classification='assistant-artifact-proposal', reference_kind='native-final-message')
         try:
             if path:
                 raise ContextError('artifact-source-selection-ambiguous')
-            native = proposal_sources_module()(chat['native_proposal'], guarded)
+            loader = proposal_sources_module()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ContextError('proposal-shared-deadline-exceeded')
+            native = loader(chat['native_proposal'], guarded,
+                            deadline_seconds=min(30, remaining) if collection_configured else 30)
             if native.get('status') != 'read':
                 artifact['error'] = 'required-selected-proposal-unavailable'
             else:
-                text = native['text'].encode('utf-8')
-                receipt = {'sha256': native['text_sha256'], 'bytes': len(text),
-                           'hash_scope': 'UTF-8 output_text content concatenated without a separator',
-                           'coordinate_scope': 'decoded proposal text; not native JSONL file offsets',
-                           'native_source': native['source'],
-                           'native_records': [{key: row.get(key) for key in (
-                               'message_id', 'timestamp', 'role', 'phase', 'byte_range',
-                               'record_sha256', 'text_sha256', 'full_record_checked')}
-                               for row in native['records']]}
-                artifact.update(status='read', owner_evidence=False, adoption_verified=False,
-                                task_completion_verified=False, qualifiers=native['qualifiers'],
-                                **text_slice(text, receipt, chat.get('section'), char_limit=128 * 1024))
+                primary_bytes = len(native['text'].encode('utf-8'))
+                artifact.update(**proposal_projection(native, chat.get('section')))
         except (ContextError, OSError, UnicodeError) as error:
             artifact.update(status='unavailable', error=safe_error(error))
     elif path:
@@ -403,10 +508,19 @@ def derived_context(current, root):
             if not isinstance(path, str) or section is None:
                 raise ContextError('artifact-requires-path-and-exact-section')
             raw, receipt = read_source(path, root, 524288)
+            primary_bytes = len(raw)
             artifact = {'status': 'read', 'classification': 'artifact-proposal',
                         **text_slice(raw, receipt, section)}
         except (ContextError, OSError, UnicodeError) as error:
             artifact.update(status='unavailable', error=safe_error(error))
+    if collection_configured and loader is None:
+        try:
+            loader = proposal_sources_module()
+        except (ContextError, OSError):
+            # Preserve the independently read primary; collection failures never
+            # expose partial contextual bodies or exception details.
+            loader = None
+    related = related_proposals(current, artifact, primary_bytes, loader, deadline)
     paths = current.get('source_accounts', [])
     if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
         raise ContextError('source-accounts-invalid')
@@ -418,7 +532,7 @@ def derived_context(current, root):
         except (ContextError, OSError, UnicodeError) as error:
             accounts.append({'status': 'unavailable', 'error': safe_error(error)})
     return artifact, {'items': accounts, 'requested_count': len(paths),
-                      'omitted_count': max(0, len(paths) - 3), 'account_limit': 3}
+                      'omitted_count': max(0, len(paths) - 3), 'account_limit': 3}, related
 
 
 class OwnedChildren:
@@ -922,17 +1036,21 @@ def prepare_context(args):
     selection, row = select_for_request(state, cue, args)
     current_record = None
     artifact = {'status': 'not-selected', 'classification': 'artifact-proposal'}
+    related = {'status': 'not-configured', 'configured': False, 'required': False,
+               'classification': 'assistant-contextual-proposals', 'items': [],
+               'owner_evidence': False, 'adoption_verified': False,
+               'task_completion_verified': False}
     accounts = {'items': [], 'requested_count': 0, 'omitted_count': 0, 'account_limit': 3}
     if row is not None:
         current_record = bounded_record(row, selection['task_id'], state_receipt)
-        artifact, accounts = derived_context(current_record['current'], root)
+        artifact, accounts, related = derived_context(current_record['current'], root)
     native_sources = current_native_sources(current_record['current'] if current_record else {}, root)
     evidence = {'status': 'not-attempted', 'reason': 'current-context-prepared', 'complete': False}
     return {'version': 1, 'kind': 'continuation-context', 'complete': False,
             'current_request': {'cue': cue, 'classification': 'caller-supplied-current-request; author/adoption not verified by compiler',
                                 'corrections': current_corrections, 'corrections_storage': 'RAM-only'},
             'selection': selection, 'current_record': current_record,
-            'selected_artifact': artifact, 'source_accounts': accounts,
+            'selected_artifact': artifact, 'related_artifacts': related, 'source_accounts': accounts,
             'current_native_sources': native_sources,
             'query_plan': query_plan,
             'canonical_evidence': evidence,
@@ -965,9 +1083,12 @@ def retrieve_context(prepared, args, probes=None, *, retrieve=True):
     queries, plan = retrieval_plan(cue, args.query, getattr(args, 'probe', []) if probes is None else probes)
     native = prepared['current_native_sources']
     artifact = prepared.get('selected_artifact', {})
+    related = prepared.get('related_artifacts', {})
     substantive = bool(words(cue)) or bool(queries) or bool(args.unit_id) or prepared['current_record'] is not None
     if artifact.get('required') and artifact.get('status') != 'read':
         evidence = {'status': 'not-attempted', 'reason': 'required-selected-proposal-unavailable', 'complete': False}
+    elif related.get('required') and related.get('status') != 'read':
+        evidence = {'status': 'not-attempted', 'reason': 'required-related-proposals-unavailable', 'complete': False}
     elif native.get('configured') and native.get('status') != 'read':
         evidence = {'status': 'not-attempted', 'reason': 'required-current-original-sources-unavailable', 'complete': False}
     elif not retrieve:

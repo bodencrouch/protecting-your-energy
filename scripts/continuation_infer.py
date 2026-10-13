@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-WORKFLOW_SHA = '3083ea946cc9ccab507f34a0cfce8e5a873df09fa3b19efee5e5409af171673d'
+WORKFLOW_SHA = '1866bc5ea0f97bb795f075f1882ff2db82732ff3ea5bbfdec9150793363b655b'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
     'stage-object-keys-invalid', 'provisional-plan-memory-schema-invalid',
@@ -230,6 +230,10 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
     if artifact.get('required') and artifact.get('status') != 'read':
         result['error'] = 'required-selected-proposal-unavailable'
         return result
+    related = prepared.get('related_artifacts', {})
+    if related.get('required') and related.get('status') != 'read':
+        result['error'] = 'required-related-proposals-unavailable'
+        return result
     if native.get('configured') and native.get('status') != 'read':
         result['error'] = 'required-current-original-sources-unavailable'
         return result
@@ -283,7 +287,7 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
         units = {unit['unit_id']: unit for unit in bundle}
         result['source_receipt']['available_unit_ids'] = list(units)
         writer_data = {key: context.get(key) for key in ('current_request', 'current_record',
-                        'selected_artifact', 'source_accounts', 'current_native_sources')}
+                        'selected_artifact', 'related_artifacts', 'source_accounts', 'current_native_sources')}
         brief = ({'classification': 'unverified provisional inference; not requirements or source facts',
                   **{key: plan[key] for key in ('purpose', 'reader_effect', 'local_scope',
                                                 'creative_options', 'uncertainties')}} if plan is not None else None)

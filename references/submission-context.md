@@ -33,7 +33,7 @@ task ID is supplied. Other substantive submissions emit an empty object.
 Canonical retrieval requires a separate explicit host invocation rather than
 this envelope mode. No hook registration is included.
 
-Unavailable required originals or proposals, conflicting IDs, ambiguous or
+Unavailable required originals, primary proposals or related proposals, conflicting IDs, ambiguous or
 malformed bindings, pin mismatches and output overflow produce a fixed failure
 without partial source context. Final output is bounded to 1 MiB; overflow
 refuses delivery rather than silently clipping originals. The existing display

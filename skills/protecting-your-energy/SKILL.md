@@ -65,6 +65,12 @@ does not substitute for a separate full draft, and an unavailable required
 proposal stops retrieval and generation. Do not ask the owner for record IDs or
 silently choose the newest assistant message as the artifact.
 
+Explicit related proposal references accompany the primary when configured.
+Keep their individual identity and proposal roles; chronology alone does not
+choose a winner or establish adoption. An unavailable required related proposal
+stops continuation before retrieval or generation. The proposal qualification
+reference describes the collection bounds.
+
 For clear requests, draft directly in the host or use this route with `--direct`,
 which skips planning and implicit archive retrieval. When the host has already
 inferred a useful brief, it may supply that provisional plan through stdin rather

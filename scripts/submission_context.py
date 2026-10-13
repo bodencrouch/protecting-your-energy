@@ -15,7 +15,7 @@ import sys
 import types
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '7929d2e4db60d784249545d815fa499c925c15132d475f9cd1ddc0152d54828f'
+COMPILER_SHA = '4aaf4043722cf88e92a50131fce14cf05ee7a5c70b9543fa31457779aec8a454'
 INPUT_LIMIT = 256 * 1024
 OUTPUT_LIMIT = 1024 * 1024
 
@@ -121,6 +121,9 @@ def main(argv=None):
             raise SubmissionError('required-current-original-sources-unavailable')
         if artifact.get('required') and artifact.get('status') != 'read':
             raise SubmissionError('required-selected-proposal-unavailable')
+        related = prepared.get('related_artifacts', {})
+        if related.get('required') and related.get('status') != 'read':
+            raise SubmissionError('required-related-proposals-unavailable')
         result = compiler.retrieve_context(prepared, args) if cli.retrieve else prepared
         result['submission_transport'] = provenance
         rendered = compiler.display_module()(result)

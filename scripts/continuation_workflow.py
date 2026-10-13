@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '7929d2e4db60d784249545d815fa499c925c15132d475f9cd1ddc0152d54828f'
+COMPILER_SHA = '4aaf4043722cf88e92a50131fce14cf05ee7a5c70b9543fa31457779aec8a454'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072
@@ -274,6 +274,12 @@ def critic_handle_catalog(context, units, applicability=None, draft=None):
         if value is not None and (key != 'selected_artifact' or value.get('status') == 'read'):
             catalog[handle] = {'meaning': 'Saved qualified context; not new historical evidence',
                                'binding': 'context.' + key}
+    related = context.get('related_artifacts', {})
+    if related.get('status') == 'read':
+        for index, item in enumerate(related.get('items', [])):
+            catalog['related-artifact-' + item['id']] = {
+                'meaning': 'Explicit related assistant proposal; not owner evidence or adoption',
+                'binding': 'context.related_artifacts.items', 'index': index}
     native = context.get('current_native_sources')
     if isinstance(native, dict) and native.get('status') == 'read':
         catalog['current-native-sources'] = {
@@ -546,6 +552,10 @@ def run_workflow(args, compiler, invoke=native_call):
     if artifact.get('required') and artifact.get('status') != 'read':
         result['error'] = 'required-selected-proposal-unavailable'
         return result
+    related = context.get('related_artifacts', {})
+    if related.get('required') and related.get('status') != 'read':
+        result['error'] = 'required-related-proposals-unavailable'
+        return result
     if native.get('configured') and native.get('status') != 'read':
         result['error'] = 'required-current-original-sources-unavailable'
         return result
@@ -578,7 +588,7 @@ def run_workflow(args, compiler, invoke=native_call):
             return result
         bundle = source_bundle(packet, units, selected)
         writer_data = {key: context.get(key) for key in ('current_request', 'current_record',
-                      'selected_artifact', 'source_accounts', 'current_native_sources')}
+                      'selected_artifact', 'related_artifacts', 'source_accounts', 'current_native_sources')}
         writer_data.update(applicability=decision, selected_unit_sources=bundle,
                            grounding='Selected source units only; empty selection is a source-limited proposal.')
         latest = call('artifact', writer_data)
