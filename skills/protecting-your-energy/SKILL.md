@@ -46,34 +46,37 @@ context for the work, not a completed result.
 Configured native source metadata is refreshed in RAM by this ordinary route;
 no separate refresh command is required. Treat its captured cutoff and coverage
 as explicit limits, and stop on unavailable required originals.
-For a sparse cue that depends on earlier meaning, formulate at most two provisional
-search probes from the current conversation, corrections and qualified available
-context. Seek consequential experiences or changed reasoning whose wording may
-differ from the cue, including context that could challenge the first interpretation.
-Forward these through repeated `--probe` arguments while leaving the original cue
-unchanged. The owner need not formulate search facets. Probes are search hypotheses;
-inspect retrieved episodes before carrying their meaning into an artifact. Clear
-requests need no additional probes. See [retrieval probes](../../references/retrieval-probes.md).
+For a sparse cue needing interpretation and a draft through the existing Claude
+client, use `python3 scripts/continuation_infer.py`. It captures current context
+once, infers a provisional purpose and desired effect, optionally proposes at most
+two retrieval probes, and produces an artifact with qualified source uses. The
+planner may decide history is unnecessary; the writer may use none of the retrieved
+sources. Neither inferred choices nor search wording become requirements or owner
+facts. See [infer and draft](../../references/continuation-infer.md). Supply current
+corrections and any artifact proposal through stdin in RAM. The host resolves a
+saved task from the live conversation when needed; do not ask the owner for task
+IDs or search facets. Standalone task selection retains its lexical limits.
 
-For explicit source-conditioned drafting through the existing Claude client,
-use `python3 scripts/continuation_workflow.py` with the current request. See
-[continuation workflow](../../references/continuation-workflow.md) for its
-selected-source boundary, bounded review and revision, and client limits. Supply
-current changes from the conversation in RAM; a frozen archive or source bookmark
-does not establish that newer corrections were read. A model verdict remains
-separate from the owner's acceptance. This route can be invoked from either
-client; automatic skill discovery is not established by its existence.
+For clear requests, draft directly in the host or use this route with `--direct`,
+which skips planning and implicit archive retrieval. When the host has already
+inferred a useful brief, it may supply that provisional plan through stdin rather
+than making another planning call. For context preparation without generation,
+the compiler still accepts at most two host-formulated hypotheses through repeated
+`--probe` arguments. See [retrieval probes](../../references/retrieval-probes.md).
 
-Before generation, make a separate applicability decision about consequential
-historical context. Where independent agents are available, give that decision
-to a reader who is not generating the artifact. Carry forward applicable meaning,
-constraints and uncertainty; suppress unrelated episodes. Review the produced
-artifact against the intended result and latest corrections, then continue the
-authorized work. Do not infer acceptance or completed application behavior from
-a successful context command.
-Use direct drafting for straightforward requests whose purpose is already clear.
-Reserve the extra native workflow for cases where ambiguity or consequences
-justify its additional calls; its model verdict does not establish better quality.
+Use `python3 scripts/continuation_workflow.py` only when an explicit applicability,
+critic and revision chain is useful enough to justify its extra calls. See
+[continuation workflow](../../references/continuation-workflow.md). These routes
+use the existing client authentication and default model; they do not install a
+provider or establish automatic discovery by another client.
+
+Review the actual artifact against the requested result and current corrections.
+Use an independent reader when consequential interpretation warrants it, rather
+than requiring a separate model chain for every draft. Preserve relevant meaning,
+constraints and uncertainty while suppressing unrelated episodes. A successful
+context command, schema-valid draft or model verdict does not establish better
+quality or owner acceptance. Continue the authorized work when delivery misses
+the requested purpose.
 
 When the request points to the owner's earlier thinking, use its wording as a
 retrieval cue. Recover the relevant original episodes and later corrections

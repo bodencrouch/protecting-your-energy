@@ -27,6 +27,12 @@ plugin. Coherent expression and timely replies use Semantic Expression's
 `make-coherent` and `contextual-reply`. The existing archive investigator and
 remote I/O capability remain available for their relevant work.
 
+[Infer and draft](references/continuation-infer.md) can turn a sparse cue into a
+provisional brief, retrieve qualified context when useful, and produce a draft
+through the existing Claude client. Clear requests can skip planning and implicit
+retrieval. Source use and inferred choices remain reviewable proposals; the route
+does not establish better output quality or automatic discovery by another client.
+
 ## Continuity
 
 The optional `scripts/energy_state.py` retains private method, idea, task,

@@ -805,7 +805,8 @@ def retrieval_plan(cue, queries, probes):
                                      'Speculative search wording must not become source facts or artifact requirements.']}
 
 
-def compile_context(args):
+def prepare_context(args):
+    """Capture current context once, without canonical retrieval or generation."""
     cue = ' '.join(args.cue).strip()
     if not cue or len(cue) > 4096 or len(args.query) > 6 or any(not q.strip() or len(q) > 2048 for q in args.query):
         raise ContextError('cue-or-query-outside-bounds')
@@ -836,18 +837,7 @@ def compile_context(args):
         current_record = bounded_record(row, selection['task_id'], state_receipt)
         artifact, accounts = derived_context(current_record['current'], root)
     native_sources = current_native_sources(current_record['current'] if current_record else {}, root)
-    substantive = bool(words(cue)) or bool(queries) or bool(args.unit_id) or row is not None
-    if native_sources.get('configured') and native_sources.get('status') != 'read':
-        evidence = {'status': 'not-attempted', 'reason': 'required-current-original-sources-unavailable',
-                    'complete': False}
-    else:
-        evidence = canonical_reclaim(cue, queries, args.unit_id, args.timeout) if substantive else {
-            'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
-        if substantive:
-            query_plan['dispatch_status'] = 'canonical-reclaim-requested'
-    query_plan['canonical_status'] = evidence.get('status')
-    if not getattr(args, 'full', False) and isinstance(evidence.get('packet'), dict):
-        evidence = {**evidence, 'packet': compact_packet(evidence['packet'])}
+    evidence = {'status': 'not-attempted', 'reason': 'current-context-prepared', 'complete': False}
     return {'version': 1, 'kind': 'continuation-context', 'complete': False,
             'current_request': {'cue': cue, 'classification': 'caller-supplied-current-request; author/adoption not verified by compiler',
                                 'corrections': current_corrections, 'corrections_storage': 'RAM-only'},
@@ -866,6 +856,42 @@ def compile_context(args):
                            'Canonical packet retains attribution, coverage and limitations; retrieval is incomplete.',
                            'Source hashes and ranges describe pre-render bytes; credential rendering may change displayed text.',
                            'No continuity writes, output files, provider selection, hooks or new stores.']}
+
+
+def retrieve_context(prepared, args, probes=None, *, retrieve=True):
+    """Retrieve against the captured context without rescanning native inputs.
+
+    The prepared object is an in-process product of prepare_context, not an
+    external source-attestation format. Caller code must keep it immutable.
+    """
+    cue = prepared['current_request']['cue']
+    if cue != ' '.join(args.cue).strip():
+        raise ContextError('prepared-current-cue-changed')
+    if not 1 <= args.timeout <= 120 or len(args.unit_id) > 6 or any(
+            not re.fullmatch('[0-9a-f]{64}', uid) for uid in args.unit_id):
+        raise ContextError('retrieval-deadline-or-anchors-outside-bounds')
+    if len(args.query) > 6 or any(not q.strip() or len(q) > 2048 for q in args.query):
+        raise ContextError('retrieval-facets-outside-bounds')
+    queries, plan = retrieval_plan(cue, args.query, getattr(args, 'probe', []) if probes is None else probes)
+    native = prepared['current_native_sources']
+    substantive = bool(words(cue)) or bool(queries) or bool(args.unit_id) or prepared['current_record'] is not None
+    if native.get('configured') and native.get('status') != 'read':
+        evidence = {'status': 'not-attempted', 'reason': 'required-current-original-sources-unavailable', 'complete': False}
+    elif not retrieve:
+        evidence = {'status': 'not-attempted', 'reason': 'retrieval-skipped-by-caller', 'complete': False}
+    elif substantive:
+        evidence = canonical_reclaim(cue, queries, args.unit_id, args.timeout)
+        plan['dispatch_status'] = 'canonical-reclaim-requested'
+    else:
+        evidence = {'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
+    plan['canonical_status'] = evidence.get('status')
+    if not getattr(args, 'full', False) and isinstance(evidence.get('packet'), dict):
+        evidence = {**evidence, 'packet': compact_packet(evidence['packet'])}
+    return {**prepared, 'query_plan': plan, 'canonical_evidence': evidence}
+
+
+def compile_context(args):
+    return retrieve_context(prepare_context(args), args)
 
 
 def main(argv=None):
