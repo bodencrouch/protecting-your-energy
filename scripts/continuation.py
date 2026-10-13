@@ -443,6 +443,233 @@ def canonical_reclaim(cue, queries, unit_ids, timeout):
     return result
 
 
+def compact_packet(packet):
+    """Reading view of verified context, with source text and critical qualifiers."""
+    omitted, texts, paths, parents, messages, actors, details = {}, {}, {}, {}, {}, {}, {}
+    text_ids, path_ids, parent_ids, message_ids, actor_ids, detail_ids = {}, {}, {}, {}, {}, {}
+    protocol = {'observations', 'snapshot_observation', 'part_bytes', 'part_mtime_ns',
+                'part_sha256', 'encoded_tokens', 'observed_at', 'retrieval_score',
+                'retrieval_reasons', 'score', 'similarity', 'matched_query',
+                'parent_version_key', 'raw_observation_version_sha256',
+                'payload_container_pointer'}
+    presentation = {'avatarUrl', 'color', 'discriminator', 'roles'}
+    source_paths = {'source', 'recorded_source', 'normalized_path', 'part', 'archive_path',
+                    'origin_path', 'source_export_path', 'captured_asset_path', 'sidecar_path'}
+    text_fields = {'text', 'quote', 'preview', 'summary', 'request', 'query', 'queries',
+                   'queries_used', 'queries_requested', 'requires', 'limitations',
+                   'interpretation', 'attribution_scope', 'media_context'}
+    instance_fields = {'indexed_source_parent', 'indexed_owner_parent', 'matched_span', 'matched_span_covered'}
+    qualification = re.compile(r'role|attribution|evidence|class|kind|primary|confirm|verif|'
+                               r'uncertain|conflict|status|state|error|fail|valid|complete|'
+                               r'truncat|exclud|missing|unresolved|scope|limit|reason|'
+                               r'interpret|require|known|approval|adoption|match|result|exit|return|code', re.I)
+
+    def encoded(value):
+        return json.dumps(value, ensure_ascii=False, allow_nan=False,
+                          sort_keys=True, separators=(',', ':')).encode()
+
+    def digest(value):
+        return hashlib.sha256(encoded(value)).hexdigest()
+
+    def pointer(parent, key):
+        return parent + '/' + str(key).replace('~', '~0').replace('/', '~1')
+
+    def omit(value, location, field):
+        item = omitted.setdefault(field, {'occurrences': 0, 'hasher': hashlib.sha256()})
+        item['occurrences'] += 1
+        item['hasher'].update(encoded([location, value]))
+        item['hasher'].update(b'\0')
+
+    def qualifier_summary(value):
+        found = {}
+        def walk(row):
+            if isinstance(row, dict):
+                for key, child in row.items():
+                    if isinstance(child, bool) or (qualification.search(key) and not isinstance(child, (dict, list))):
+                        found.setdefault(key, {})[digest(child)] = child
+                    elif isinstance(child, (dict, list)):
+                        walk(child)
+            elif isinstance(row, list):
+                for child in row:
+                    walk(child)
+        walk(value)
+        return {key: list(values.values()) for key, values in found.items()}
+
+    def identity_value(value, field=None):
+        if isinstance(value, dict):
+            return {key: identity_value(child, key) for key, child in value.items()
+                    if key not in protocol and not (field in ('author', 'original_normalized_author') and key in presentation)}
+        if isinstance(value, list):
+            return [identity_value(child, field) for child in value]
+        return value
+
+    def project(value, location='', field=None, bypass_detail=False):
+        if isinstance(value, str) and field in text_fields:
+            identity = hashlib.sha256(value.encode()).hexdigest()
+            if identity in text_ids:
+                return {'text_ref': text_ids[identity]}
+            key = 't' + str(len(text_ids) + 1)
+            text_ids[identity] = key
+            texts[key] = {'first_view_pointer': location}
+            return value
+        if isinstance(value, str) and field in source_paths:
+            if value not in path_ids:
+                key = 's' + str(len(path_ids) + 1)
+                path_ids[value] = key
+                paths[key] = value
+            return {'source_path_ref': path_ids[value]}
+        if field in ('parents', 'parent_locators') and isinstance(value, list):
+            references = []
+            for index, row in enumerate(value):
+                identity = digest(identity_value(row))
+                if identity not in parent_ids:
+                    key = 'p' + str(len(parent_ids) + 1)
+                    parent_ids[identity] = key
+                    parents[key] = project(row, pointer(location, index))
+                references.append(parent_ids[identity])
+            return {'parent_refs': references}
+        if field == 'messages' and isinstance(value, list):
+            references = []
+            for index, row in enumerate(value):
+                if not isinstance(row, dict):
+                    references.append(project(row, pointer(location, index)))
+                    continue
+                body = {key: child for key, child in row.items() if key not in instance_fields}
+                identity = digest(identity_value(body))
+                if identity not in message_ids:
+                    key = 'm' + str(len(message_ids) + 1)
+                    message_ids[identity] = key
+                    messages[key] = project(body, pointer(location, index))
+                references.append({'message_ref': message_ids[identity],
+                                   **{key: row[key] for key in instance_fields if key in row}})
+            return references
+        if field in ('author', 'original_normalized_author') and isinstance(value, dict):
+            identity = digest(identity_value(value, field))
+            if identity not in actor_ids:
+                key = 'a' + str(len(actor_ids) + 1)
+                actor_ids[identity] = key
+                actors[key] = {name: project(child, pointer(location, name), name)
+                               for name, child in value.items() if name not in presentation}
+            for name in presentation & set(value):
+                omit(value[name], pointer(location, name), name)
+            return {'actor_ref': actor_ids[identity]}
+        if not bypass_detail and field in ('derived_media', 'derived_media_context', 'media_derivations', 'media_context') and isinstance(value, (dict, list)):
+            identity = digest(identity_value(value))
+            if identity not in detail_ids:
+                key = 'd' + str(len(detail_ids) + 1)
+                detail_ids[identity] = key
+                details[key] = project(value, location, field, bypass_detail=True)
+            return {'media_detail_ref': detail_ids[identity]}
+        if isinstance(value, dict):
+            result = {}
+            for key, child in value.items():
+                child_location = pointer(location, key)
+                if key in protocol or (field in ('author', 'original_normalized_author') and key in presentation) or (field == 'media_context' and key in ('attachments', 'embeds', 'stickers')):
+                    omit(child, child_location, key)
+                    if isinstance(child, (dict, list)):
+                        flags = qualifier_summary(child)
+                        if flags:
+                            result[key + '_qualification'] = flags
+                    continue
+                if field == 'display_redaction' and key == 'fields':
+                    omit(child, child_location, 'display_redaction.fields')
+                    result['field_receipt_count'] = len(child) if isinstance(child, list) else None
+                elif field == 'thought_leads' and key in ('prior_interpretation', 'related'):
+                    omit(child, child_location, 'generated.' + key)
+                    result[key] = {'detail_in_full_view': True, 'classification': 'prior generated interpretation; not source evidence'}
+                else:
+                    result[key] = project(child, child_location, key)
+            if field == 'display_redaction':
+                result['pointer_scope'] = 'Original producer packet before compact projection and anchor ordering.'
+            return result
+        if isinstance(value, list):
+            return [project(child, pointer(location, index), field=field) for index, child in enumerate(value)]
+        return value
+
+    # Project anchors before other evidence, retaining original producer indices
+    # for receipts. This also creates their actual inline text/registry rows first.
+    originals = packet.get('discovery_originals')
+    if isinstance(originals, list):
+        ordered = sorted(enumerate(originals), key=lambda pair:
+            0 if isinstance(pair[1], dict) and pair[1].get('source_selection') == 'explicit-unit-anchor' else 1)
+        result = {'discovery_originals': [project(row, pointer('/discovery_originals', index))
+                                         for index, row in ordered]}
+        result.update({key: project(value, pointer('', key), key) for key, value in packet.items()
+                       if key != 'discovery_originals'})
+    else:
+        result = project(packet)
+    result['source_paths'] = paths
+    def table(rows):
+        fields = list(dict.fromkeys(key for row in rows.values() for key in row))
+        return {'fields': fields, 'rows': {key: [row.get(field, {'field_not_returned': True}) for field in fields]
+                                         for key, row in rows.items()}}
+    result['source_parents'] = table(parents)
+    result['source_messages'] = table(messages)
+    result['source_actors'] = actors
+    result['media_details'] = details
+    if isinstance(originals, list):
+        result = {'discovery_originals': result['discovery_originals'],
+                  'source_messages': result['source_messages'],
+                  **{key: value for key, value in result.items()
+                     if key not in ('discovery_originals', 'source_messages')}}
+    # Text locations describe the final view, including consolidated registries.
+    located = set()
+    def locate(value, location='', field=None):
+        if isinstance(value, str) and field in text_fields:
+            identity = hashlib.sha256(value.encode()).hexdigest()
+            key = text_ids.get(identity)
+            if key is not None and key not in located:
+                texts[key]['first_view_pointer'] = location
+                located.add(key)
+        elif isinstance(value, dict):
+            for key, child in value.items():
+                locate(child, pointer(location, key), key)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                table_field = field
+                for registry in ('source_messages', 'source_parents'):
+                    if re.fullmatch('/' + registry + '/rows/[^/]+', location):
+                        table_field = result[registry]['fields'][index]
+                locate(child, pointer(location, index), table_field)
+    locate(result)
+    result['source_text_references'] = texts
+    # Receipts count the original packet, not just deduplicated rendered copies.
+    omitted.clear()
+    def count_omissions(value, location='', field=None):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_location = pointer(location, key)
+                if key in protocol or (field in ('author', 'original_normalized_author') and key in presentation) or (field == 'media_context' and key in ('attachments', 'embeds', 'stickers')):
+                    omit(child, child_location, key)
+                elif field == 'display_redaction' and key == 'fields':
+                    omit(child, child_location, 'display_redaction.fields')
+                elif field == 'thought_leads' and key in ('prior_interpretation', 'related'):
+                    omit(child, child_location, 'generated.' + key)
+                else:
+                    count_omissions(child, child_location, key)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                count_omissions(child, pointer(location, index), field)
+    count_omissions(packet)
+    result['context_view'] = {
+        'kind': 'agent-reading', 'complete': False,
+        'canonical_display_packet_sha256': digest(packet),
+        'canonical_display_packet_bytes': len(json.dumps(packet, ensure_ascii=False,
+                                                         separators=(',', ':')).encode()),
+        'hash_scope': 'Canonical returned JSON values after producer verification and display sanitization; not raw source bytes.',
+        'omitted_metadata_fields': {field: {'occurrences': row['occurrences'],
+                                          'original_values_and_pointers_sha256': row['hasher'].hexdigest()}
+                                    for field, row in omitted.items()},
+        'omitted_pointer_scope': 'Pointers address the original producer packet, before compact projection or anchor ordering.',
+        'references': 'Resolve source_path_ref in source_paths, parent_refs in source_parents/rows, message_ref in source_messages/rows, actor_ref in source_actors, media_detail_ref in media_details. Parent/message row columns follow each registry fields array; field_not_returned marks absence rather than a false result. text_ref resolves through source_text_references/first_view_pointer to exact inline text in the final view. Message-instance owner/source-parent flags stay with each unit reference.',
+        'text_policy': 'All returned source messages, evidence quotes, context turns, lead previews and qualified media text retained without new truncation. Duplicate text is shown once with explicit references. Generated prior interpretations are expansion frontiers, not primary source text.',
+        'metadata_policy': 'This reading view preserves critical source identity, parent spans/full text hashes, attribution, verification failures and flags; it does not promise full-value metadata roundtrip. Protocol ledgers and presentation fields remain available with --full.',
+        'inspection': 'Use --full with the same cue, facets and anchors for complete canonical metadata; a new run can differ.',
+        'attribution': 'Existing role, source-parent, owner-parent and authorship flags remain authoritative only within their original scope; no adoption inferred.',
+        'coordinate_scope': 'Message ranges, text hashes and truncation remain the producer values before display redaction.'}
+    return result
+
+
 def corrections(args):
     values = list(args.correction)
     if args.corrections_stdin:
@@ -498,6 +725,8 @@ def compile_context(args):
     substantive = bool(words(cue)) or bool(args.query) or bool(args.unit_id) or row is not None
     evidence = canonical_reclaim(cue, args.query, args.unit_id, args.timeout) if substantive else {
         'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
+    if not getattr(args, 'full', False) and isinstance(evidence.get('packet'), dict):
+        evidence = {**evidence, 'packet': compact_packet(evidence['packet'])}
     return {'version': 1, 'kind': 'continuation-context', 'complete': False,
             'current_request': {'cue': cue, 'classification': 'caller-supplied-current-request; author/adoption not verified by compiler',
                                 'corrections': current_corrections, 'corrections_storage': 'RAM-only'},
@@ -524,11 +753,12 @@ def main(argv=None):
     parser.add_argument('--correction', action='append', default=[], help='Current correction kept in memory')
     parser.add_argument('--corrections-stdin', action='store_true', help='Read a JSON list of correction strings, or {"corrections": [...]}')
     parser.add_argument('--timeout', type=float, default=90, help='Canonical subprocess deadline in seconds, 1..120')
+    parser.add_argument('--full', action='store_true', help='Retain the complete canonical packet on stdout instead of the reading view')
     args = parser.parse_args(argv)
     try:
         sanitize = display_module()
         packet = compile_context(args)
-        print(json.dumps(sanitize(packet), ensure_ascii=False, allow_nan=False, indent=2))
+        print(json.dumps(sanitize(packet), ensure_ascii=False, allow_nan=False, separators=(',', ':')))
         return 0
     except (ValueError, OSError, TypeError, KeyError, UnicodeError, RecursionError) as error:
         print(json.dumps({'version': 1, 'kind': 'continuation-context', 'complete': False,

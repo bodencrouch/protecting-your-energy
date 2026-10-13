@@ -4,6 +4,51 @@ Run `python3 scripts/continuation.py CUE` with an ordinary current request.
 The command returns a JSON context packet on stdout. It does not create an
 artifact, finish a task, save corrections or install automatic invocation.
 
+The default reading view retains the full current record, current corrections,
+selected artifact and bounded source accounts. Within canonical context it
+retains every returned evidence quote, owner reply, hydrated message text and
+lead preview/prose, including qualified derived-media text,
+including peer/assistant context and existing attribution, hashes, locators,
+reply links, ranges and truncation flags. Explicitly anchored contexts appear
+first. It introduces no additional source-text cutoff or semantic reranking.
+Anchored contexts are projected before other evidence, so their actual inline
+text and registry rows come first. Producer coordinates remain unchanged.
+Duplicate text appears once; `text_ref` resolves through
+`source_text_references/first_view_pointer` to that inline text in the final view.
+
+`source_path_ref` resolves in `source_paths`, `actor_ref` in `source_actors`,
+and `media_detail_ref` in `media_details`. `parent_refs` and `message_ref` resolve
+in `source_parents/rows` and `source_messages/rows`; their columns follow each
+table's `fields` array. `field_not_returned` explicitly distinguishes absence
+from false or null. Message-instance source/owner-parent flags remain beside
+each unit's message reference. Parent identities, full text hashes, indexed
+character spans, dates, reply links, roles and actor classes remain available
+for every returned parent, including unhydrated leads.
+
+Protocol observations, timing/score metadata, repeated hash ledgers and actor
+presentation fields are omitted with field names, occurrence counts and hashes
+of original values and locations. Available qualification flags, failure states
+and exit codes remain, including false, conflicting and unknown states.
+Attempt outcomes remain ordered with their query/unit associations, errors,
+result flags and explicit empty arrays. Actor identity, names, role and
+attribution remain; avatars, colors, discriminators
+and role presentation lists are omitted. Source checks, unit/generation handles,
+derivation IDs, media availability and interpretation qualifiers remain.
+Media and lead text stays qualified; attachment content has not been reviewed.
+Old generated interpretations are labelled expansion frontiers with detail in
+`--full`, rather than additional primary source context. Detailed redaction
+field receipts remain in `--full`; counts and scope stay visible. Original-value
+and redaction pointers refer to the producer packet before projection.
+Coverage, generation, diagnostics, limitations and anchor outcomes remain in
+the view. This projection does not establish full coverage, belief adoption or
+approval or full-value metadata roundtrip. Display-value hashes identify
+returned JSON metadata, not raw bytes.
+
+`--full` returns the complete canonical packet from that invocation on stdout,
+without saving it. Use it for detailed provenance inspection; a subsequent
+retrieval can return a different snapshot, so compare generation and packet
+receipts. Both views receive the final credential sanitizer.
+
 `--task-id ID` explicitly selects an existing continuity task. Otherwise task
 IDs and goals supply lexical candidates, labelled as lexical rather than
 semantic selection. A sole candidate qualifies only with at least two salient
