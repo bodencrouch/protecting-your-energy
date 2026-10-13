@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import time
+import types
 
 sys.dont_write_bytecode = True
 
@@ -24,6 +25,7 @@ CONFIG = DEFAULT_ROOT / 'config.json'
 RECLAIM = Path.home() / 'brain-data/upar-dip/tooling/thought-reconstruction/bin/thought-reconstruction'
 DISPLAY_SHA = '1b255b77c5e5c5043f04e73753abf5516e717633a7cb6d172d3d0a092e6706f5'
 NATIVE_CONTEXT_SHA = '224064965aed00cb6dec46aa3ba177a0f9a2b07986894075c9236a3b509576b8'
+NATIVE_REFRESH_SHA = '266b269dc1e2114f89141cfb8e86d33df5b57f506b7dee06cd9aeed9ae4f901a'
 BLOCKED = ('.sealed', '.sanitized', '.seal-', 'request-only', 'request_only',
            '.request-only', 'quarantine', 'credentials', '.staging')
 MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
@@ -67,6 +69,69 @@ def native_sources_module():
     module = importlib.util.module_from_spec(spec)
     exec(compile(raw, str(path), 'exec'), module.__dict__)
     return module.load_current_sources
+
+
+def native_refresh_module():
+    path = Path(__file__).resolve().with_name('refresh_native_bookmarks.py')
+    if path.is_symlink() or path.resolve().parent != Path(__file__).resolve().parent:
+        raise ContextError('native-refresh-module-location-invalid')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != NATIVE_REFRESH_SHA:
+        raise ContextError('native-refresh-module-hash-mismatch')
+    spec = importlib.util.spec_from_file_location('pye_continuation_refresh', path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module
+
+
+def current_native_sources(current, root):
+    """Refresh metadata in RAM before authenticating selected original input rows."""
+    hydrate = native_sources_module()
+    if not isinstance(current, dict) or 'current_source_bookmarks' not in current:
+        return hydrate(current, root, read_source, guarded)
+    try:
+        refresh = native_refresh_module()
+        compiler_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        book, raw = refresh.refresh(
+            current['current_source_bookmarks'], current.get('source_threads'), root,
+            deadline_seconds=30,
+            compiler_io=types.SimpleNamespace(read_source=read_source, guarded=guarded),
+            compiler_sha256=compiler_sha)
+        identity = 'ram:current-native-prefix-snapshot'
+        digest = hashlib.sha256(raw).hexdigest()
+
+        def read_book(path, derived_root, limit):
+            if path != identity or derived_root != root or len(raw) > limit:
+                raise ContextError('native-refresh-ram-reference-invalid')
+            return raw, {'path': identity, 'sha256': digest, 'bytes': len(raw),
+                         'storage': 'RAM-only; no corresponding file'}
+
+        snapshot = {**current, 'current_source_bookmarks': {'path': identity, 'sha256': digest}}
+        result = hydrate(snapshot, root, read_book, guarded)
+        result['freshness'] = {'status': 'snapshot-captured',
+                               'descriptor': {'path': identity, 'sha256': digest, 'bytes': len(raw)},
+                               'observed_at': book['observed_at'],
+                               'proof': book['refresh_proof'],
+                               'prefixes': [{'thread_id': entry['thread_id'],
+                                             'prefix_snapshot': entry['prefix_snapshot']}
+                                            for entry in book['bookmarks']],
+                               'descriptor_stored': False, 'state_reference_switched': False,
+                               'helper_sha256': NATIVE_REFRESH_SHA}
+        result['scope'] = 'selected captured complete native prefixes; later appends unverified'
+        result['qualifiers'] = [
+            'Current caller input takes precedence over historical native inputs.',
+            'Freshness proof authenticates captured prefixes; hydration separately authenticates exact input rows.',
+            'Appends after capture remain outside this snapshot; no perpetual latest-input guarantee.',
+            'Native markers do not independently prove human identity or owner adoption.']
+        return result
+    except (ValueError, OSError, TypeError, KeyError, OverflowError):
+        return {'status': 'unavailable', 'configured': True, 'snapshot_complete': False,
+                'records': [], 'threads': [], 'bookmark': None,
+                'diagnostic': 'required-native-prefix-refresh-failed',
+                'freshness': {'status': 'unavailable', 'descriptor_stored': False,
+                              'state_reference_switched': False},
+                'live_tail_scanned': False, 'newer_human_inputs_may_exist': True,
+                'qualifiers': ['Required refresh failed; no stale fallback or partial input bodies returned.']}
 
 
 def guarded(path):
@@ -736,11 +801,14 @@ def compile_context(args):
     if row is not None:
         current_record = bounded_record(row, selection['task_id'], state_receipt)
         artifact, accounts = derived_context(current_record['current'], root)
-    native_sources = native_sources_module()(
-        current_record['current'] if current_record else {}, root, read_source, guarded)
+    native_sources = current_native_sources(current_record['current'] if current_record else {}, root)
     substantive = bool(words(cue)) or bool(args.query) or bool(args.unit_id) or row is not None
-    evidence = canonical_reclaim(cue, args.query, args.unit_id, args.timeout) if substantive else {
-        'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
+    if native_sources.get('configured') and native_sources.get('status') != 'read':
+        evidence = {'status': 'not-attempted', 'reason': 'required-current-original-sources-unavailable',
+                    'complete': False}
+    else:
+        evidence = canonical_reclaim(cue, args.query, args.unit_id, args.timeout) if substantive else {
+            'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
     if not getattr(args, 'full', False) and isinstance(evidence.get('packet'), dict):
         evidence = {**evidence, 'packet': compact_packet(evidence['packet'])}
     return {'version': 1, 'kind': 'continuation-context', 'complete': False,
@@ -754,7 +822,7 @@ def compile_context(args):
                                   'source': state_receipt, 'configuration': config_receipt},
             'qualifiers': ['Context only; no finished artifact or task completion established.',
                            'Current request and corrections remain separate from saved accounts and source facts.',
-                           'Native source records authenticate a bookmarked snapshot; newer inputs and adoption remain unverified.',
+                           'Native source records authenticate a refreshed captured snapshot; later appends and adoption remain unverified.',
                            'Task selection is lexical and does not establish semantic applicability.',
                            'Saved artifact is a proposal; derived accounts are interpretations, not additional owner evidence.',
                            'Canonical packet retains attribution, coverage and limitations; retrieval is incomplete.',

@@ -28,9 +28,12 @@ self-contained source bundles in RAM. Unselected units, unrelated leads and
 generated prior interpretations are excluded from the writer source bundle.
 Configured [native source bookmarks](native-context.md) are authenticated and
 hydrated separately into RAM for applicability, writing, revision and criticism.
-They establish the exact bookmarked input snapshot, not newer input or adoption
+The ordinary compiler first refreshes their complete-prefix metadata in RAM;
+the separate refresh proof and exact-row hydration proof retain their own scopes.
+They establish a captured input snapshot, not subsequent appends or adoption
 of every expression. Current caller changes keep precedence. If required original
-records are unavailable, the workflow returns without making native model calls.
+records or refresh are unavailable, the compiler skips canonical retrieval and
+the workflow returns without making native model calls.
 The output source receipt includes their coverage and row provenance without bodies.
 The critic can inspect the full original compiler context. Its runtime handle
 catalog identifies the current request, each current correction, available saved
@@ -73,7 +76,9 @@ strings as a JSON list or `{"corrections": [...]}`. `--timeout` sets the retriev
 deadline to 1–120 seconds (default 90). `--native-timeout` sets each native
 generation deadline to 1–600 seconds (default 300). Both bounds are checked before
 source access or native calls. Up to five native deadlines can be consumed, plus
-retrieval and bounded process cleanup. A timeout returns an unsuccessful result
+refresh, hydration, retrieval and bounded process cleanup. Refresh and hydration
+each have a separate 30-second cooperative deadline; blocked OS operations cannot
+be interrupted by those checks. A timeout returns an unsuccessful result
 and any existing draft; it does not establish a ready artifact. `--include-context` explicitly
 includes the complete compiler packet in stdout; otherwise source receipts and
 available/selected unit handles accompany the artifact without dumping that packet.

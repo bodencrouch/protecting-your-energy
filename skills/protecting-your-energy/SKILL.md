@@ -38,6 +38,9 @@ The executable route is documented in
 [continuation access](../../references/continuation-access.md). It keeps incoming
 corrections separate from saved records and source evidence. A prepared packet is
 context for the work, not a completed result.
+Configured native source metadata is refreshed in RAM by this ordinary route;
+no separate refresh command is required. Treat its captured cutoff and coverage
+as explicit limits, and stop on unavailable required originals.
 
 For explicit source-conditioned drafting through the existing Claude client,
 use `python3 scripts/continuation_workflow.py` with the current request. See
@@ -55,6 +58,9 @@ constraints and uncertainty; suppress unrelated episodes. Review the produced
 artifact against the intended result and latest corrections, then continue the
 authorized work. Do not infer acceptance or completed application behavior from
 a successful context command.
+Use direct drafting for straightforward requests whose purpose is already clear.
+Reserve the extra native workflow for cases where ambiguity or consequences
+justify its additional calls; its model verdict does not establish better quality.
 
 When the request points to the owner's earlier thinking, use its wording as a
 retrieval cue. Recover the relevant original episodes and later corrections
