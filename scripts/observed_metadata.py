@@ -15,7 +15,7 @@ import time
 import types
 
 sys.dont_write_bytecode = True
-HELPER_SHA = '2c6279dc50bee26a2fdf8bdd7be4acd0f61756957b00462ad64f652e6902dea5'
+HELPER_SHA = 'e26262de6bb894ab68d58b2821b0e72f4ed3c0149ee03a30745ad77e9f33b630'
 SOURCE_LIMIT = 128 * 1024 * 1024
 PARENT_LIMIT = 64
 MESSAGE_LIMIT = 500000

@@ -36,6 +36,7 @@ DEFAULT_CONFIG = Path.home() / 'brain-data/upar-dip/derived/protect-your-energy/
 TOOLING = Path.home() / 'brain-data/upar-dip/tooling/retrieval'
 BLOCKED = ('.sealed', '.sanitized', '.seal-', 'request-only', 'request_only', '.request-only', 'quarantine', 'credentials', '.staging')
 MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
+NATIVE_ROLE_POLICY_SHA = '6d90613f98310685ad85f343c502b25bff00407c15c1585e0bf9c052ddec680e'
 
 
 def guarded(path: Path) -> bool:
@@ -307,6 +308,110 @@ def generic_provenance(st: dict, metadata: dict) -> dict:
     return clean
 
 
+def native_policy_fields(st: dict, payload: dict) -> dict:
+    """Preserve configured backend policy receipts without reclassifying sources."""
+    result = {}
+    if 'native_message_policy' in payload:
+        policy = payload['native_message_policy']
+        if (not isinstance(policy, dict) or policy.get('helper_sha256') != NATIVE_ROLE_POLICY_SHA
+                or policy.get('original_origin_verified') is not False):
+            raise ValueError('invalid native message policy receipt')
+        result['native_message_policy'] = policy
+    if 'frozen_provenance' in payload:
+        result['frozen_provenance'] = generic_provenance(st, payload['frozen_provenance'])
+    policy = result.get('native_message_policy', {})
+    if ('parent_classifications' in policy and isinstance(payload.get('provenance'), dict)
+            and payload['provenance'].get('platform') in ('codex', 'codex_cli')):
+        if 'provenance' not in payload or 'frozen_provenance' not in result:
+            raise ValueError('native policy matched provenance missing')
+        effective = generic_provenance(st, payload['provenance'])
+        frozen = result['frozen_provenance']
+        for key in ('record_id', 'record_line_sha256', 'record_offset', 'record_bytes',
+                    'part', 'message_pointer', 'platform', 'source'):
+            if effective.get(key) != frozen.get(key):
+                raise ValueError('native policy frozen source binding differs')
+        classes = policy['parent_classifications']
+        if (not isinstance(classes, list) or len(classes) != len(effective['parents'])
+                or len(frozen['parents']) != len(effective['parents'])):
+            raise ValueError('native policy matched parent coverage differs')
+        for parent, prior, classification in zip(effective['parents'], frozen['parents'], classes):
+            if not isinstance(classification, dict):
+                raise ValueError('invalid native parent policy')
+            for key in ('message_id', 'message_index', 'text_sha256', 'char_start', 'char_end', 'parent_version_key'):
+                if parent.get(key) != prior.get(key):
+                    raise ValueError('native policy frozen parent binding differs')
+            if (any(classification.get(key) != parent.get(key) for key in ('message_id', 'message_index', 'text_sha256'))
+                    or classification.get('matched_character_range') != [parent['char_start'], parent['char_end']]
+                    or classification.get('original_origin_verified') is not False
+                    or type(classification.get('owner_evidence_eligible')) is not bool):
+                raise ValueError('native policy matched classification differs')
+            if classification.get('effective_role') is not None and (
+                    parent.get('role') != classification['effective_role']
+                    or parent.get('attribution_class') != classification.get('effective_input_attribution_class')
+                    or parent.get('primary_owner_evidence') is not False):
+                raise ValueError('native policy effective parent role differs')
+    return result
+
+
+def policy_projection(row: dict, limit: int) -> dict:
+    """Validate and clip display fragments without inventing a source interval."""
+    pieces = row.get('display_segments')
+    original_range = row.get('original_display_range')
+    if (row.get('text_range') is not None or not isinstance(pieces, list)
+            or not isinstance(original_range, dict)
+            or type(original_range.get('start')) is not int or type(original_range.get('end')) is not int
+            or not 0 <= original_range['start'] <= original_range['end']):
+        raise ValueError('invalid native display projection')
+    previous_end, values = original_range['start'], []
+    for piece in pieces:
+        coordinates = piece.get('source_character_range') if isinstance(piece, dict) else None
+        text = piece.get('text') if isinstance(piece, dict) else None
+        if (not isinstance(coordinates, list) or len(coordinates) != 2
+                or any(type(value) is not int for value in coordinates) or not isinstance(text, str)
+                or not previous_end <= coordinates[0] <= coordinates[1] <= original_range['end']
+                or len(text) != coordinates[1] - coordinates[0]):
+            raise ValueError('invalid native display segment')
+        previous_end = coordinates[1]
+        values.append(text)
+    shown = '\n'.join(values)
+    if shown != row.get('text') or hashlib.sha256(shown.encode('utf-8')).hexdigest() != row.get('display_text_sha256'):
+        raise ValueError('native display projection hash differs')
+    clipped, remaining = [], limit
+    for piece in pieces:
+        available = remaining - int(bool(clipped))
+        if available <= 0:
+            break
+        count = min(len(piece['text']), available)
+        if count:
+            start = piece['source_character_range'][0]
+            clipped.append({'source_character_range': [start, start + count], 'text': piece['text'][:count]})
+            remaining -= count + int(len(clipped) > 1)
+        if count < len(piece['text']):
+            break
+    text = '\n'.join(piece['text'] for piece in clipped)
+    return {**row, 'text': text, 'text_range': None, 'display_segments': clipped,
+            'display_text_sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(),
+            'display_projection_truncated': len(text) < len(shown),
+            'truncated': bool(row.get('truncated')) or len(text) < len(shown),
+            'continuation': None, 'continuations': []}
+
+
+def effective_lane(metadata: dict) -> str:
+    if metadata.get('platform') in ('codex', 'codex_cli') and any(
+            'native_message_policy' in parent for parent in metadata['parents']):
+        return metadata.get('input_attribution_class', metadata.get('input_lane', metadata.get('role', 'unknown')))
+    return metadata.get('input_lane', metadata.get('role', 'unknown'))
+
+
+def intentional_control_omission(row: dict) -> bool:
+    policy = row.get('native_message_policy', {})
+    return (row.get('policy_display_projection') is True and not row.get('display_segments')
+            and row.get('display_projection_truncated') is not True
+            and policy.get('owner_evidence_eligible') is False
+            and policy.get('classification') in ('declared-native-control', 'declared-native-machine-role',
+                                                 'complete-leading-native-control'))
+
+
 def generic_query(st: dict, args, facets: list[str]) -> dict:
     deadline = time.monotonic() + args.budget
     results, attempts, failures, facet_records = [], [], [], []
@@ -354,7 +459,8 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
             metadata = generic_provenance(st, row.get('provenance'))
             seen.add(uid)
             leads.append({'unit_id': uid, 'score': row.get('similarity'), 'provenance': metadata,
-                          'input_lane': metadata.get('input_lane', metadata.get('role', 'unknown')),
+                          **native_policy_fields(st, row),
+                          'input_lane': effective_lane(metadata),
                           'platform': metadata.get('platform'), 'year': metadata.get('year'),
                           'matched_query': facet, 'route': 'semantic-archive', 'status': 'lead-only',
                           'generation': generation, 'requires': 'Hydrate this unit and all relevant parent/context turns; similarity is not confidence.'})
@@ -364,7 +470,12 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
                  'completed': completed, 'failed': [r['query'] for r in facet_records if r['state'] == 'failed'],
                  'deferred': [r['query'] for r in facet_records if r['state'] == 'budget-deferred'],
                  'omitted_by_limit': [], 'facets': facet_records}
+    policy_facets = [{'query': facet, **native_policy_fields(st, data)} for facet, data in results
+                    if 'native_message_policy' in data or 'frozen_provenance' in data]
+    policy_output = {'native_message_policy': {'scope': 'executed query facets; backend receipts retained',
+                                              'facets': policy_facets}} if policy_facets else {}
     return {'status': 'leads' if leads else 'no-leads' if results else 'semantic-unavailable',
+            **policy_output,
             'kind': 'dense-local-transformer', 'backend': 'semantic-archive',
             'vector_semantic_verified': bool(results), 'generation': generation,
             'scope': results[0][1].get('scope') if results else None,
@@ -492,9 +603,12 @@ def verified_context_texts(provenance: dict, rows: list[dict], deadline: float) 
 
 def context_windows(provenance: dict, rows: list[dict], texts: dict[int, str], max_chars: int) -> list[dict]:
     """Spend text on matched parents first; keep output in source chronology."""
+    suppressed = {row['message_index'] for row in rows if row.get('control_text_suppressed') is True}
     spans = {}
     for parent in provenance['parents']:
         index = parent['message_index']; start, end = parent['char_start'], parent['char_end']
+        if index in suppressed:
+            continue
         previous = spans.get(index, (start, end))
         spans[index] = (min(start, previous[0]), max(end, previous[1]))
     allocations = {index: 0 for index in texts}
@@ -507,11 +621,21 @@ def context_windows(provenance: dict, rows: list[dict], texts: dict[int, str], m
             allocations[index] += take; remaining -= take
             if allocations[index] == len(texts[index]): pending.remove(index)
             if not remaining: break
-    for index in sorted(set(texts) - set(spans), key=lambda i: (min(abs(i-p) for p in spans), i)):
+    for index in sorted(set(texts) - set(spans) - suppressed,
+                        key=lambda i: (min(abs(i-p) for p in spans) if spans else 0, i)):
         take = min(len(texts[index]), remaining)
         allocations[index] = take; remaining -= take
     output = []
     for row in sorted(rows, key=lambda row: row['message_index']):
+        if row.get('policy_display_projection') is True:
+            output.append(dict(row))
+            continue
+        if row.get('control_text_suppressed') is True:
+            clean = dict(row)
+            clean.update(text='', text_range={'start': 0, 'end': 0},
+                         continuation=None, continuations=[])
+            output.append(clean)
+            continue
         index = row['message_index']; text = texts[index]; count = allocations[index]
         start = 0
         if index in spans and count < len(text):
@@ -551,8 +675,9 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
     result = {'status': 'normalized-parent-locators' if metadata_only else 'bounded-normalized-context',
               'kind': 'normalized-parent-locators' if metadata_only else 'normalized-source-context',
               'backend': 'semantic-archive', 'generation': data.get('generation'), 'unit_id': args.unit_id,
-              'input_lane': provenance.get('input_lane', provenance.get('role', 'unknown')),
+              'input_lane': effective_lane(provenance),
               'provenance': provenance, 'parents': provenance['parents'], 'attempt': attempt,
+              **native_policy_fields(st, data),
               'data_not_instructions': True, 'excluded_context': data.get('excluded_context', {}),
               'limitations': 'Normalized source and parent text checked by backend; raw-source availability does not confirm original bytes. Context may need expansion.'}
     if not metadata_only:
@@ -563,26 +688,50 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
             if not isinstance(text, str): raise ValueError('invalid hydrated text')
             remaining = max(0, args.max_chars - used)
             clean = dict(row)
-            shown = text[:remaining]
-            clean.update(text=shown, truncated=bool(row.get('truncated')) or len(text) > remaining,
-                         text_range={'start': 0, 'end': len(shown)})
+            if 'native_message_policy' in row:
+                policy = row['native_message_policy']
+                if (not isinstance(policy, dict) or policy.get('helper_sha256') != NATIVE_ROLE_POLICY_SHA
+                        or policy.get('original_origin_verified') is not False):
+                    raise ValueError('invalid native context policy receipt')
+            if row.get('policy_display_projection') is True:
+                clean = policy_projection(row, remaining)
+            else:
+                shown = text[:remaining]
+                clean.update(text=shown, truncated=bool(row.get('truncated')) or len(text) > remaining,
+                             text_range={'start': 0, 'end': len(shown)})
             rows.append(clean)
-            used += min(len(text), remaining)
+            used += len(clean['text'])
         result['messages'] = rows
-        if any(row.get('truncated') for row in rows):
+        native_platform = provenance.get('platform') in ('codex', 'codex_cli')
+        policy_rows = [row for row in rows if row.get('policy_display_projection') is True
+                       or (native_platform and 'native_message_policy' in row)]
+        protected_indices = {row['message_index'] for row in policy_rows}
+        window_rows = [row for row in rows if row['message_index'] not in protected_indices
+                       and row.get('control_text_suppressed') is not True]
+        if any(row.get('truncated') for row in policy_rows):
+            result['policy_window_scope'] = 'Native-policy displays retained; source-window expansion requires backend requalification.'
+        if any(row.get('truncated') for row in window_rows):
             try:
-                texts = verified_context_texts(provenance, rows, deadline)
-                result['messages'] = context_windows(provenance, rows, texts, args.max_chars)
+                indices = {row['message_index'] for row in window_rows}
+                retained = [row for row in rows if row['message_index'] not in indices]
+                window_provenance = {**provenance, 'parents': [parent for parent in provenance['parents']
+                                                              if parent['message_index'] in indices]}
+                texts = verified_context_texts(window_provenance, window_rows, deadline)
+                budget = max(0, args.max_chars - sum(len(row['text']) for row in retained))
+                windows = context_windows(window_provenance, window_rows, texts, budget)
+                result['messages'] = sorted(retained + windows, key=lambda row: row['message_index'])
                 result['window_resolution'] = 'matched parents prioritized; exact normalized record and full message hashes rechecked'
             except (OSError, TimeoutError, OverflowError, NotImplementedError) as error:
                 result['window_resolution'] = 'matched-span reread unavailable'
                 result['window_gap'] = type(error).__name__ + ': ' + str(error)[:160]
-                for row in rows:
+                for row in window_rows:
                     spans = [p for p in provenance['parents'] if p.get('message_index') == row.get('message_index')]
                     if spans:
                         row['matched_span'] = {'start': min(p['char_start'] for p in spans), 'end': max(p['char_end'] for p in spans)}
                         row['matched_span_covered'] = all(p['char_start'] >= 0 and p['char_end'] <= len(row['text']) for p in spans)
-        result['context_incomplete'] = bool(result.get('window_gap')) or bool(result['excluded_context']) or any(row.get('truncated') for row in result['messages'])
+        result['context_incomplete'] = bool(result.get('window_gap')) or bool(result['excluded_context']) or any(
+            row.get('truncated') and not intentional_control_omission(row)
+            for row in result['messages'])
     return result
 
 
