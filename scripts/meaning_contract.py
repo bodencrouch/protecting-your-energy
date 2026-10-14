@@ -22,7 +22,9 @@ VALIDATION_CODES = frozenset(('meaning-schema-invalid', 'meaning-bound-exceeded'
 
 
 class MeaningError(ValueError):
-    pass
+    def __init__(self, code, *, quote_failure=None):
+        super().__init__(code)
+        self.quote_failure = quote_failure
 
 
 def encoded(value):
@@ -84,29 +86,69 @@ def bundle_schema(catalog):
                     'rationale': _string(1024)})
 
 
+def _quote_failure(text, quote, kind, offsets):
+    """Describe only bounded exact locations, without the source or quote body."""
+    return {'kind': kind, 'rendered_text_sha256': hashlib.sha256(text.encode()).hexdigest(),
+            'quote_sha256': hashlib.sha256(quote.encode()).hexdigest(),
+            'quote_characters': len(quote), 'quote_utf8_bytes': len(quote.encode()),
+            'match_offsets_characters': offsets,
+            'match_count_scope': 'at-least-two' if len(offsets) == 2 else 'exact',
+            'judgment': 'quote-location failure; meaning unverified'}
+
+
+def _anchor_context(handle, row, location, index):
+    context = {'target_kind': 'catalog-field', 'contract_location': {'anchor_index': index}}
+    # Only route-generated handle shapes and fixed role names enter diagnostics.
+    if len(handle) <= 64 and re.fullmatch(
+            r'current-cue|current-correction-[0-9]+|native-input-[0-9]+|selected-proposal|related-proposal-[0-9]+|caller-proposal', handle):
+        context['handle'] = handle
+    if row.get('role') in ('current-caller-cue', 'current-caller-correction',
+            'qualified-historical-native-input', 'qualified-artifact-proposal',
+            'qualified-assistant-proposal', 'caller-artifact-proposal'):
+        context['role'] = row['role']
+    if location:
+        for key, value in location.items():
+            if ((key == 'section' and value in ('meaning', 'meaning_dispositions'))
+                    or (key == 'field' and value in ('support', 'counterevidence', 'distinguishing_evidence'))
+                    or (key in ('candidate_index', 'entry_index') and type(value) is int and 0 <= value < 2)):
+                context['contract_location'][key] = value
+    return context
+
+
 def _unique_quote(text, quote):
     _text(quote, 1024)
-    if PLACEHOLDER in quote:
-        raise MeaningError('meaning-quote-redacted')
     start = text.find(quote)
-    if start < 0 or text.find(quote, start + 1) >= 0:
-        raise MeaningError('meaning-quote-not-exact-unique')
+    second = text.find(quote, start + 1) if start >= 0 else -1
+    offsets = ([start] if start >= 0 else []) + ([second] if second >= 0 else [])
+    if PLACEHOLDER in quote:
+        raise MeaningError('meaning-quote-redacted',
+            quote_failure=_quote_failure(text, quote, 'redacted', offsets))
+    if start < 0 or second >= 0:
+        raise MeaningError('meaning-quote-not-exact-unique',
+            quote_failure=_quote_failure(text, quote, 'absent' if start < 0 else 'repeated', offsets))
     redacted = text.find(PLACEHOLDER)
     while redacted >= 0:
         if start < redacted + len(PLACEHOLDER) and redacted < start + len(quote):
-            raise MeaningError('meaning-quote-redacted')
+            raise MeaningError('meaning-quote-redacted',
+                quote_failure=_quote_failure(text, quote, 'redacted', offsets))
         redacted = text.find(PLACEHOLDER, redacted + len(PLACEHOLDER))
 
 
-def validate_anchors(value, catalog, *, primary=False):
+def validate_anchors(value, catalog, *, primary=False, location=None):
     seen = set()
-    for anchor in _list(value, 4):
+    for index, anchor in enumerate(_list(value, 4)):
         _keys(anchor, ('handle', 'quote'))
         handle = anchor['handle']
         if not isinstance(handle, str) or handle not in catalog:
             raise MeaningError('meaning-handle-unknown')
         row = catalog[handle]
-        _unique_quote(row['text'], anchor['quote'])
+        try:
+            _unique_quote(row['text'], anchor['quote'])
+        except MeaningError as error:
+            if error.quote_failure is not None:
+                # These bindings come from the captured catalogue, not the model.
+                error.quote_failure.update(_anchor_context(handle, row, location, index))
+            raise
         identity = (handle, anchor['quote'])
         if identity in seen:
             raise MeaningError('meaning-schema-invalid')
@@ -120,7 +162,7 @@ def validate_bundle(value, catalog=None):
     _keys(value, ('candidates', 'rationale'))
     _text(value['rationale'], 1024)
     ids, meanings = set(), set()
-    for candidate in _list(value['candidates'], 2):
+    for index, candidate in enumerate(_list(value['candidates'], 2)):
         _keys(candidate, ('id', 'interpretation', 'meaning', 'artifact_difference', 'support', 'counterevidence'))
         cid = candidate['id']
         if not isinstance(cid, str) or re.fullmatch('[A-Za-z0-9_-]{1,32}', cid) is None:
@@ -139,8 +181,10 @@ def validate_bundle(value, catalog=None):
             raise MeaningError('meaning-primary-support-required')
         _list(candidate['counterevidence'], 4)
         if catalog is not None:
-            validate_anchors(candidate['support'], catalog)
-            validate_anchors(candidate['counterevidence'], catalog)
+            validate_anchors(candidate['support'], catalog,
+                location={'section': 'meaning', 'candidate_index': index, 'field': 'support'})
+            validate_anchors(candidate['counterevidence'], catalog,
+                location={'section': 'meaning', 'candidate_index': index, 'field': 'counterevidence'})
             if not any(catalog[item['handle']]['primary_support'] for item in candidate['support']):
                 raise MeaningError('meaning-primary-support-required')
         else:
@@ -163,13 +207,15 @@ def disposition_schema(bundle, catalog):
 def validate_dispositions(value, bundle, catalog, artifact):
     if not isinstance(value, dict) or set(value) != {item['id'] for item in bundle['candidates']}:
         raise MeaningError('meaning-disposition-keys-invalid')
-    for entry in value.values():
+    for index, entry in enumerate(value.values()):
         _keys(entry, ('status', 'explanation', 'distinguishing_evidence', 'artifact_consequence', 'artifact_quotes'))
         if entry['status'] not in ('resolved', 'rejected', 'unresolved'):
             raise MeaningError('meaning-schema-invalid')
         for field in ('explanation', 'artifact_consequence'):
             _text(entry[field], 2048)
-        evidence = validate_anchors(entry['distinguishing_evidence'], catalog, primary=True)
+        evidence = validate_anchors(entry['distinguishing_evidence'], catalog, primary=True,
+            location={'section': 'meaning_dispositions', 'entry_index': index,
+                      'field': 'distinguishing_evidence'})
         if entry['status'] != 'unresolved' and not evidence:
             raise MeaningError('meaning-primary-support-required')
         quotes = _list(entry['artifact_quotes'], 3)
@@ -177,8 +223,15 @@ def validate_dispositions(value, bundle, catalog, artifact):
             _text(quote, 1024)
         if not quotes or len(set(quotes)) != len(quotes):
             raise MeaningError('meaning-schema-invalid')
-        for quote in quotes:
-            _unique_quote(artifact, quote)
+        for quote_index, quote in enumerate(quotes):
+            try:
+                _unique_quote(artifact, quote)
+            except MeaningError as error:
+                if error.quote_failure is not None:
+                    error.quote_failure.update(target_kind='generated-artifact',
+                        contract_location={'section': 'meaning_dispositions', 'entry_index': index,
+                                           'field': 'artifact_quotes', 'quote_index': quote_index})
+                raise
     return value
 
 

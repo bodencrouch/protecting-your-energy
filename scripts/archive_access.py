@@ -913,7 +913,13 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
         result['context_incomplete'] = bool(result.get('window_gap')) or bool(result['excluded_context']) or any(
             row.get('truncated') and not intentional_control_omission(row)
             for row in result['messages'])
-        if provenance.get('platform') == 'discord' and provenance.get('kind') == 'conversation':
+        snapshot_event = (
+            provenance.get('kind') == 'event'
+            and provenance.get('message_pointer') == '/body/text (decoded JSON)/export/messages'
+            and (provenance.get('source') or {}).get('family') == 'discord_channel_snapshot'
+            and isinstance((provenance.get('source') or {}).get('source_sha256'), str)
+            and re.fullmatch(r'[0-9a-f]{64}', provenance['source']['source_sha256']) is not None)
+        if provenance.get('platform') == 'discord' and (provenance.get('kind') == 'conversation' or snapshot_event):
             result['original_episode'] = original_episode(st, args, result, deadline)
         elif (provenance.get('platform') == 'icloud' and provenance.get('kind') == 'document'
               and (provenance.get('source') or {}).get('family') == 'icloud_notes'):

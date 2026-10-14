@@ -11,7 +11,7 @@ import sys
 
 sys.dont_write_bytecode = True
 WORKFLOW_SHA = '49742de08a56a7eb7d4eeb931449324b7ddb4d98ebf90c0e62279e05e289cd5d'
-MEANING_SHA = '9857f4474eb484c2cf1aadb32dfa2a296a52d759c85178c3cbc5a53ce63f5214'
+MEANING_SHA = '0dafabb4333dcdcc8b069d3324f37de7df05f002c8f9889b56710093c3d1f519'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
     'stage-object-keys-invalid', 'provisional-plan-memory-schema-invalid',
@@ -414,6 +414,8 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
             meaning is not None and isinstance(error, meaning.MeaningError)) else None
         codes = VALIDATION_CODES | (meaning.VALIDATION_CODES if meaning is not None else frozenset())
         result['validation_code'] = code if code in codes else 'stage-or-source-contract-invalid'
+        if meaning is not None and isinstance(error, meaning.MeaningError) and error.quote_failure is not None:
+            result['quote_failure_receipt'] = error.quote_failure
         if candidate is not None:
             result['invalid_response_receipt'] = candidate
     return result
