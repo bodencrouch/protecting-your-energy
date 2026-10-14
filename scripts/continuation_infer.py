@@ -20,7 +20,8 @@ VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-
     'inference-native-stage-failed',
     'inference-canonical-retrieval-failed', 'inference-hydrated-unit-bound-exceeded',
     'captured-native-context-changed', 'inference-source-anchor-invalid',
-    'inference-source-quote-not-exact-unique', 'inference-source-quote-redacted'))
+    'inference-source-quote-not-exact-unique', 'inference-source-quote-redacted',
+    'inference-required-source-anchor-unavailable'))
 
 PLAN_RULES = '''Infer a provisional purpose, reader effect and bounded local scope
 from the current cue and corrections. Infer the appropriate domain and craft,
@@ -437,6 +438,11 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
         bundle = transport.source_bundle(packet, available, list(available))
         units = {unit['unit_id']: unit for unit in bundle}
         result['source_receipt']['available_unit_ids'] = list(units)
+        requested = list(dict.fromkeys(args.unit_id))
+        missing = [uid for uid in requested if uid not in units]
+        result['source_receipt'].update(requested_unit_ids=requested, missing_required_unit_ids=missing)
+        if missing:
+            raise InferError('inference-required-source-anchor-unavailable')
         writer_data = {key: context.get(key) for key in ('current_request', 'current_record',
                         'selected_artifact', 'related_artifacts', 'source_accounts', 'current_native_sources')}
         brief = ({'classification': 'unverified provisional inference; not requirements or source facts',
