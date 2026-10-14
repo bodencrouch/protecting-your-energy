@@ -19,7 +19,8 @@ VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-
     'inference-source-use-map-keys-invalid', 'inference-source-role-overstated',
     'inference-native-stage-failed',
     'inference-canonical-retrieval-failed', 'inference-hydrated-unit-bound-exceeded',
-    'captured-native-context-changed'))
+    'captured-native-context-changed', 'inference-source-anchor-invalid',
+    'inference-source-quote-not-exact-unique', 'inference-source-quote-redacted'))
 
 PLAN_RULES = '''Infer a provisional purpose, reader effect and bounded local scope
 from the current cue and corrections. Infer the appropriate domain and craft,
@@ -148,13 +149,48 @@ def validate_plan(transport, value, meaning=None, catalog=None):
     return value
 
 
+def source_anchor_catalog(unit):
+    """Bind local handles to displayed rows; eligibility is not semantic proof."""
+    result = {}
+    for index, row in enumerate(unit.get('messages', [])):
+        if not isinstance(row, dict) or not isinstance(row.get('text'), str) or not row['text']:
+            continue
+        author = row.get('author') if isinstance(row.get('author'), dict) else {}
+        policy = row.get('native_message_policy')
+        eligible = (owner_source_available(unit) and row.get('indexed_owner_parent') is True
+                    and row.get('role') == 'self' and author.get('role') == 'self'
+                    and isinstance(author.get('id'), str) and bool(author['id'])
+                    and isinstance(row.get('message_id'), str) and bool(row['message_id'])
+                    and (not isinstance(policy, dict) or policy.get('owner_evidence_eligible') is not False))
+        result['m' + str(index)] = {'row_index': index, 'message_id': row.get('message_id'),
+            'message_index': row.get('message_index'), 'author_id': author.get('id'),
+            'author_role': author.get('role'), 'role': row.get('role'),
+            'indexed_owner_parent': row.get('indexed_owner_parent'),
+            'indexed_source_parent': row.get('indexed_source_parent'),
+            'displayed_text_sha256': hashlib.sha256(row['text'].encode()).hexdigest(),
+            'text_range': row.get('text_range'),
+            'permitted_roles': ['context-only', 'owner-attributed-source'] if eligible else ['context-only']}
+    return result
+
+
 def writer_schema(transport, units, meaning=None, bundle=None, catalog=None):
     text = {'type': 'string', 'minLength': 1, 'maxLength': 4096}
     slots = {}
     for uid, unit in units.items():
+        anchors = source_anchor_catalog(unit)
+        if not anchors:
+            slots[uid] = {'type': 'null'}
+            continue
         roles = ['owner-attributed-source', 'context-only'] if owner_source_available(unit) else ['context-only']
+        anchor_choices = [transport.object_schema({
+            'handle': {'type': 'string', 'enum': [handle]},
+            'quote': {'type': 'string', 'minLength': 1, 'maxLength': 1024},
+            'evidence_role': {'type': 'string', 'enum': item['permitted_roles']}})
+            for handle, item in anchors.items()]
         use = transport.object_schema({'artifact_decision': text, 'use': text,
-            'evidence_role': {'type': 'string', 'enum': roles}, 'limitations': text})
+            'evidence_role': {'type': 'string', 'enum': roles}, 'limitations': text,
+            'anchors': {'type': 'array', 'minItems': 1, 'maxItems': 4,
+                        'items': {'anyOf': anchor_choices}}})
         slots[uid] = {'anyOf': [{'type': 'null'}, use],
                       'description': 'Null means unused; a use object explains artifact decisions informed by this source.'}
     properties = {
@@ -206,6 +242,36 @@ def owner_source_available(unit):
                     for row in unit.get('messages', []) if isinstance(row, dict)))
 
 
+def validate_source_anchors(transport, anchors, unit):
+    catalogue = source_anchor_catalog(unit)
+    if not isinstance(anchors, list) or not 1 <= len(anchors) <= 4:
+        raise InferError('inference-source-anchor-invalid')
+    seen, owner = set(), False
+    for anchor in anchors:
+        transport.exact_keys(anchor, ('handle', 'quote', 'evidence_role'))
+        handle = anchor['handle']
+        if not isinstance(handle, str) or handle not in catalogue or handle in seen:
+            raise InferError('inference-source-anchor-invalid')
+        seen.add(handle)
+        entry = catalogue[handle]
+        if anchor['evidence_role'] not in entry['permitted_roles']:
+            raise InferError('inference-source-role-overstated')
+        quote = anchor['quote']
+        transport.string(quote, 1024)
+        text = unit['messages'][entry['row_index']]['text']
+        start = text.find(quote)
+        if start < 0 or text.find(quote, start + 1) >= 0:
+            raise InferError('inference-source-quote-not-exact-unique')
+        placeholder = '[REDACTED CREDENTIAL]'
+        redacted = text.find(placeholder)
+        while redacted >= 0:
+            if start < redacted + len(placeholder) and redacted < start + len(quote):
+                raise InferError('inference-source-quote-redacted')
+            redacted = text.find(placeholder, redacted + len(placeholder))
+        owner = owner or anchor['evidence_role'] == 'owner-attributed-source'
+    return 'owner-attributed-source' if owner else 'context-only'
+
+
 def validate_writer(transport, value, units, meaning=None, bundle=None, catalog=None):
     keys = ('artifact', 'source_uses', 'uncertainties')
     transport.exact_keys(value, keys + (('meaning_dispositions',) if meaning is not None else ()))
@@ -222,12 +288,11 @@ def validate_writer(transport, value, units, meaning=None, bundle=None, catalog=
         use = slots[uid]
         if use is None:
             continue
-        transport.exact_keys(use, ('artifact_decision', 'use', 'evidence_role', 'limitations'))
+        transport.exact_keys(use, ('artifact_decision', 'use', 'evidence_role', 'limitations', 'anchors'))
         for field in ('artifact_decision', 'use', 'limitations'):
             transport.string(use[field], 4096)
         role = use['evidence_role']
-        if role not in ('owner-attributed-source', 'context-only') or (
-                role == 'owner-attributed-source' and not owner_source_available(units[uid])):
+        if role != validate_source_anchors(transport, use['anchors'], units[uid]):
             raise InferError('inference-source-role-overstated')
         basis.append(uid)
         uses.append({'unit_id': uid, **use})
@@ -378,6 +443,7 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
                                                 'creative_options', 'uncertainties')}} if plan is not None else None)
         writer_data.update(provisional_inference=brief, current_artifact_proposal=current_artifact,
                            available_source_units=bundle,
+                           source_anchor_catalogues={uid: source_anchor_catalog(unit) for uid, unit in units.items()},
                            source_role_limits={uid: {'owner_attributed_source_available': owner_source_available(unit),
                                 'original_identity_and_adoption_verified': False} for uid, unit in units.items()})
         if meaning is not None:
@@ -392,7 +458,9 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
                       source_basis=written['source_basis'], uncertainties=written['uncertainties'],
                       source_limited_proposal=written['source_limited_proposal'])
         result['source_receipt'].update(source_uses_sha256=digest(transport, written['source_uses']),
-                                        source_use_count=len(written['source_uses']))
+                                        source_use_count=len(written['source_uses']),
+                                        source_anchor_count=sum(len(use['anchors']) for use in written['source_uses']),
+                                        source_anchor_judgment='Exact displayed quote locations and permitted source roles checked; semantic entailment, identity and adoption unverified')
         if meaning is not None:
             result['source_receipt']['meaning_contract'].update(
                 candidate_count=len(meaning_bundle['candidates']),
