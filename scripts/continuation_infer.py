@@ -21,7 +21,7 @@ VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-
     'inference-canonical-retrieval-failed', 'inference-hydrated-unit-bound-exceeded',
     'captured-native-context-changed', 'inference-source-anchor-invalid',
     'inference-source-quote-not-exact-unique', 'inference-source-quote-redacted',
-    'inference-required-source-anchor-unavailable'))
+    'inference-required-source-anchor-unavailable', 'inference-source-applicability-invalid'))
 
 PLAN_RULES = '''Infer a provisional purpose, reader effect and bounded local scope
 from the current cue and corrections. Infer the appropriate domain and craft,
@@ -45,6 +45,15 @@ an exact key: null means unused; a use object explains its specific artifact
 decisions and limitations privately. One source can inform multiple decisions.
 The route derives the selected basis and absence of archival grounding from this
 map, even when the current cue or native inputs suffice.
+Each use includes applicability: describe the source's actor, experiencer, target,
+relation, polarity, modality and condition, using null for unspecified slots.
+Propose its standing as retained, qualified, revised, withdrawn or unresolved;
+these are provisional interpretations, not accepted source facts. Cite zero to
+four same-unit qualification anchors for relevant context or changes. Explain why
+the source applies to this artifact decision and quote one to three exact unique
+artifact spans showing the transfer. Preserve chronological context and current
+corrections. Schema and quote-location validation do not establish applicability,
+standing, entailment or usefulness.
 Preserve primary versus contextual, mixed, quoted and unconfirmed source roles.
 Owner-attributed source is not independent identity, original-byte or adoption
 proof. Do not turn operational context, peer words, search hypotheses or generated
@@ -175,6 +184,7 @@ def source_anchor_catalog(unit):
 
 
 def writer_schema(transport, units, meaning=None, bundle=None, catalog=None):
+    applicability_helper = meaning or load_meaning()
     text = {'type': 'string', 'minLength': 1, 'maxLength': 4096}
     slots = {}
     for uid, unit in units.items():
@@ -192,7 +202,15 @@ def writer_schema(transport, units, meaning=None, bundle=None, catalog=None):
         use = transport.object_schema({'artifact_decision': text, 'use': text,
             'evidence_role': {'type': 'string', 'enum': roles}, 'limitations': text,
             'anchors': {'type': 'array', 'minItems': 1, 'maxItems': 4,
-                        'items': {'anyOf': anchor_choices}}})
+                        'items': {'anyOf': anchor_choices}},
+            'applicability': transport.object_schema({
+                'source_scope': applicability_helper.scope_schema(),
+                'standing': {'type': 'string', 'enum': ['retained', 'qualified', 'revised', 'withdrawn', 'unresolved']},
+                'qualification_anchors': {'type': 'array', 'maxItems': 4,
+                                          'items': {'anyOf': anchor_choices}},
+                'transfer_reason': text,
+                'artifact_quotes': {'type': 'array', 'minItems': 1, 'maxItems': 3,
+                                   'items': {'type': 'string', 'minLength': 1, 'maxLength': 1024}}})})
         slots[uid] = {'anyOf': [{'type': 'null'}, use],
                       'description': 'Null means unused; a use object explains artifact decisions informed by this source.'}
     properties = {
@@ -244,9 +262,9 @@ def owner_source_available(unit):
                     for row in unit.get('messages', []) if isinstance(row, dict)))
 
 
-def validate_source_anchors(transport, anchors, unit):
+def validate_source_anchors(transport, anchors, unit, *, minimum=1):
     catalogue = source_anchor_catalog(unit)
-    if not isinstance(anchors, list) or not 1 <= len(anchors) <= 4:
+    if not isinstance(anchors, list) or not minimum <= len(anchors) <= 4:
         raise InferError('inference-source-anchor-invalid')
     seen, owner = set(), False
     for anchor in anchors:
@@ -274,7 +292,51 @@ def validate_source_anchors(transport, anchors, unit):
     return 'owner-attributed-source' if owner else 'context-only'
 
 
+def validate_applicability(transport, value, unit, artifact, helper):
+    """Check bounded structure and locations, leaving transfer judgments provisional."""
+    transport.exact_keys(value, ('source_scope', 'standing', 'qualification_anchors',
+                                 'transfer_reason', 'artifact_quotes'))
+    try:
+        helper.validate_scope(value['source_scope'])
+        if value['standing'] not in ('retained', 'qualified', 'revised', 'withdrawn', 'unresolved'):
+            raise InferError('inference-source-applicability-invalid')
+        transport.string(value['transfer_reason'], 4096)
+        validate_source_anchors(transport, value['qualification_anchors'], unit, minimum=0)
+        quotes = value['artifact_quotes']
+        if (not isinstance(quotes, list) or not 1 <= len(quotes) <= 3
+                or any(not isinstance(quote, str) for quote in quotes)
+                or len(set(quotes)) != len(quotes)):
+            raise InferError('inference-source-applicability-invalid')
+        for quote in quotes:
+            helper._unique_quote(artifact, quote)
+    except helper.MeaningError as error:
+        raise InferError('inference-source-applicability-invalid') from error
+
+
+def source_use_receipt(transport, uid, use, unit, artifact):
+    """Expose route-bound identities and offsets without source or artifact prose."""
+    catalog = source_anchor_catalog(unit)
+    applicability = use['applicability']
+    bindings = {}
+    for field, anchors in (('anchors', use['anchors']),
+                           ('qualification_anchors', applicability['qualification_anchors'])):
+        bindings[field] = [{**catalog[anchor['handle']], 'handle': anchor['handle'],
+            'evidence_role': anchor['evidence_role'],
+            'quote_sha256': hashlib.sha256(anchor['quote'].encode()).hexdigest(),
+            'quote_offset_characters': unit['messages'][catalog[anchor['handle']]['row_index']]['text'].find(anchor['quote']),
+            'quote_characters': len(anchor['quote'])} for anchor in anchors]
+    return {'unit_id': uid, **bindings,
+        'proposed_standing': applicability['standing'],
+        'source_scope_sha256': digest(transport, applicability['source_scope']),
+        'transfer_reason_sha256': digest(transport, applicability['transfer_reason']),
+        'artifact_quotes': [{'quote_sha256': hashlib.sha256(quote.encode()).hexdigest(),
+            'quote_offset_characters': artifact.find(quote), 'quote_characters': len(quote)}
+            for quote in applicability['artifact_quotes']],
+        'judgment': 'Schema, permitted roles and exact displayed locations checked; standing, applicability, semantic fidelity and usefulness unverified'}
+
+
 def validate_writer(transport, value, units, meaning=None, bundle=None, catalog=None):
+    applicability_helper = meaning or load_meaning()
     keys = ('artifact', 'source_uses', 'uncertainties')
     transport.exact_keys(value, keys + (('meaning_dispositions',) if meaning is not None else ()))
     transport.string(value['artifact'], transport.ARTIFACT_LIMIT)
@@ -285,23 +347,26 @@ def validate_writer(transport, value, units, meaning=None, bundle=None, catalog=
         raise InferError('inference-source-use-map-schema-invalid')
     if set(slots) != set(units):
         raise InferError('inference-source-use-map-keys-invalid')
-    basis, uses = [], []
+    basis, uses, receipts = [], [], []
     for uid in units:
         use = slots[uid]
         if use is None:
             continue
-        transport.exact_keys(use, ('artifact_decision', 'use', 'evidence_role', 'limitations', 'anchors'))
+        transport.exact_keys(use, ('artifact_decision', 'use', 'evidence_role', 'limitations', 'anchors', 'applicability'))
         for field in ('artifact_decision', 'use', 'limitations'):
             transport.string(use[field], 4096)
         role = use['evidence_role']
         if role != validate_source_anchors(transport, use['anchors'], units[uid]):
             raise InferError('inference-source-role-overstated')
+        validate_applicability(transport, use['applicability'], units[uid], value['artifact'], applicability_helper)
         basis.append(uid)
         uses.append({'unit_id': uid, **use})
+        receipts.append(source_use_receipt(transport, uid, use, units[uid], value['artifact']))
     for text in transport.strings(value['uncertainties'], 8):
         transport.string(text, 4096)
     result = {'artifact': value['artifact'], 'source_basis': basis, 'source_uses': uses,
-              'uncertainties': value['uncertainties'], 'source_limited_proposal': not bool(basis)}
+              'uncertainties': value['uncertainties'], 'source_limited_proposal': not bool(basis),
+              'source_use_receipts': receipts}
     if meaning is not None:
         result['meaning_dispositions'] = meaning.validate_dispositions(
             value['meaning_dispositions'], bundle, catalog, value['artifact'])
@@ -354,6 +419,7 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
               'artifact': None, 'objective_success': False, 'owner_acceptance': 'not-established',
               'stages': [], 'max_native_calls': 1 if getattr(args, 'direct', False) or host_plan is not None else 2,
               'source_receipt': {'compiler_sha256': transport.COMPILER_SHA,
+                 'source_applicability_helper_sha256': MEANING_SHA,
                  'prepared_context_sha256': digest(transport, prepared),
                  'captured_native_inputs_sha256': captured_native_hash,
                  'current_request_sha256': digest(transport, prepared['current_request']),
@@ -466,7 +532,9 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
                       source_limited_proposal=written['source_limited_proposal'])
         result['source_receipt'].update(source_uses_sha256=digest(transport, written['source_uses']),
                                         source_use_count=len(written['source_uses']),
+                                        source_use_receipts=written['source_use_receipts'],
                                         source_anchor_count=sum(len(use['anchors']) for use in written['source_uses']),
+                                        qualification_anchor_count=sum(len(use['applicability']['qualification_anchors']) for use in written['source_uses']),
                                         source_anchor_judgment='Exact displayed quote locations and permitted source roles checked; semantic entailment, identity and adoption unverified')
         if meaning is not None:
             result['source_receipt']['meaning_contract'].update(
