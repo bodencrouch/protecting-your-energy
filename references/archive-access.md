@@ -65,9 +65,17 @@ of `--include-unconfirmed-input`; that flag alone does not include documents.
 The published lexical supplement accepts the same explicit document selection.
 Legacy and path routes reject it. These units retain
 `role: context_document`, `primary_owner_evidence: false`, their explicit
-attribution/evidence fields and original parent roles/authors. Hydrated document
+attribution/evidence fields and separately preserved frozen parent roles/authors. Hydrated document
 parents are source parents, never indexed owner parents, even when an archived
 role says `self`.
+
+Account-only Notes importer labels receive a separate `source_policy` qualification
+in dense search, explicit lexical search, parent lookup and hydration. Their
+effective lane is `context_document`; frozen self labels remain separately
+available. This qualification establishes neither composition nor adoption.
+Candidate filtering occurs after bounded ranking or matching without refill;
+fewer returned leads do not establish absence. Published role counts retain
+their frozen meaning.
 
 Generic status uses the backend's compact response; per-source classification
 maps remain in its immutable manifest. Parent lookup verifies full text hashes
@@ -203,6 +211,17 @@ gaps separately. Unavailable originals leave an explicitly qualified normalized
 packet, not evidence that the archive contains no original. If the indexed
 original file hash is absent, exact parent matching can establish a fresh file
 pin; the result explicitly retains that weaker initial source binding.
+
+Full Notes hydration can attach `original_document` when `archive_access.notes_original`
+contains a pinned mapping manifest. The installed reader checks the frozen
+normalized record, restored export UUID and record coordinates, title/body
+transformation and complete selected parent text. It retains the old locator
+separately and supplies actual raw coordinates. Source proof is supplemental;
+text remains in the normalized display without duplicate body output. Check
+`normalized_display.all_matched_spans_displayed` independently of
+`mapping_complete`. Other Notes are not conversation neighbors. This route
+does not establish fresh cloud synchronization, native database bytes,
+authorship, adoption or complete semantic coverage of the raw export.
 
 For a separate metadata-only recovery, resolve an exact
 alternate version with

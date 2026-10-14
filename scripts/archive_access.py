@@ -42,6 +42,8 @@ MARKERS = ('.sealing-in-progress', '.request-only', 'REQUEST_ONLY', '.sealed')
 NATIVE_ROLE_POLICY_SHA = '6d90613f98310685ad85f343c502b25bff00407c15c1585e0bf9c052ddec680e'
 ORIGINAL_RESOLVER = TOOLING / 'discord_capture_resolver.py'
 ORIGINAL_RESOLVER_SHA = '409abf482adb9fa3d68865c049730a3c3e1ada002fc641b22b2daab11bb61207'
+NOTE_CAPTURE_READER = Path(__file__).with_name('note_capture_reader.py')
+NOTE_CAPTURE_READER_SHA = '14ddd190bf0b096ceaa3707fb39a5c9b0f61b4267ad108071090b9c2bd6b7334'
 
 
 def guarded(path: Path) -> bool:
@@ -328,6 +330,76 @@ def native_policy_fields(st: dict, payload: dict) -> dict:
         result['native_message_policy'] = policy
     if 'frozen_provenance' in payload:
         result['frozen_provenance'] = generic_provenance(st, payload['frozen_provenance'])
+    if 'source_policy' in payload:
+        document_policy = payload['source_policy']
+        if (not isinstance(document_policy, dict)
+                or document_policy.get('schema_version') != 1
+                or document_policy.get('policy_id') != 'icloud-account-attribution-context-v1'
+                or document_policy.get('original_origin_verified') is not False):
+            raise ValueError('invalid document source policy receipt')
+        result['source_policy'] = document_policy
+        if 'parent_classifications' in document_policy:
+            effective = generic_provenance(st, payload.get('provenance'))
+            frozen = result.get('frozen_provenance')
+            account = document_policy.get('archived_account_attribution')
+            if (not isinstance(frozen, dict)
+                    or document_policy.get('source_kind') != 'document'
+                    or document_policy.get('record_type') != 'doc.note'
+                    or document_policy.get('platform') != 'icloud'
+                    or document_policy.get('source_family') != 'icloud_notes'
+                    or document_policy.get('reason') != 'saved-account-note-without-independent-authorship-basis'
+                    or document_policy.get('effective_input_lane') != 'context_document'
+                    or document_policy.get('primary_owner_evidence') is not False
+                    or document_policy.get('authorship_established') is not False
+                    or document_policy.get('adoption_established') is not False
+                    or document_policy.get('normalized_source_record_verified') is not True
+                    or document_policy.get('frozen_provenance_preserved_separately') is not True
+                    or not isinstance(account, dict)
+                    or account.get('self_labels_verified') is not True
+                    or account.get('self_label_rule') != 'iCloud Notes authored by signed-in account (Boden)'
+                    or effective.get('kind') != 'document' or effective.get('platform') != 'icloud'
+                    or effective.get('source', {}).get('family') != 'icloud_notes'
+                    or effective.get('role') != 'context_document'
+                    or effective.get('input_lane') != 'context_document'
+                    or effective.get('input_attribution_class') != 'context_document'
+                    or effective.get('primary_owner_evidence') is not False
+                    or effective.get('frozen_role') != frozen.get('role')
+                    or effective.get('frozen_input_attribution_class') != frozen.get('input_attribution_class')
+                    or account.get('account_field_present') != ('account' in frozen.get('source', {}))
+                    or account.get('account_value_present') != (frozen.get('source', {}).get('account') is not None)):
+                raise ValueError('document policy effective source qualification differs')
+            for key in ('record_id', 'record_line_sha256', 'record_offset', 'record_bytes',
+                        'part', 'message_pointer', 'platform', 'source'):
+                if effective.get(key) != frozen.get(key):
+                    raise ValueError('document policy frozen source binding differs')
+            classes = document_policy['parent_classifications']
+            if (not isinstance(classes, list) or len(classes) != len(effective['parents'])
+                    or len(frozen['parents']) != len(effective['parents'])):
+                raise ValueError('document policy matched parent coverage differs')
+            for parent, prior, classification in zip(effective['parents'], frozen['parents'], classes):
+                if not isinstance(classification, dict):
+                    raise ValueError('invalid document parent policy')
+                for key in ('message_id', 'message_index', 'text_sha256', 'char_start', 'char_end',
+                            'parent_version_key', 'timestamp', 'timestamp_edited', 'reply_to'):
+                    if parent.get(key) != prior.get(key):
+                        raise ValueError('document policy frozen parent binding differs')
+                if (any(classification.get(key) != parent.get(key)
+                        for key in ('message_id', 'message_index', 'text_sha256'))
+                        or classification.get('matched_character_range') != [parent['char_start'], parent['char_end']]
+                        or classification.get('normalized_full_parent_verified') is not True
+                        or classification.get('effective_role') != 'context_document'
+                        or classification.get('effective_input_lane') != 'context_document'
+                        or classification.get('primary_owner_evidence') is not False
+                        or classification.get('authorship_established') is not False
+                        or classification.get('adoption_established') is not False
+                        or parent.get('source_policy') != classification
+                        or parent.get('role') != 'context_document'
+                        or parent.get('attribution_class') != 'context_document'
+                        or parent.get('author') != {**(prior.get('author') or {}), 'role': 'context_document'}
+                        or parent.get('frozen_role') != prior.get('role')
+                        or parent.get('frozen_attribution_class') != prior.get('attribution_class')
+                        or parent.get('primary_owner_evidence') is not False):
+                    raise ValueError('document policy matched classification differs')
     policy = result.get('native_message_policy', {})
     if ('parent_classifications' in policy and isinstance(payload.get('provenance'), dict)
             and payload['provenance'].get('platform') in ('codex', 'codex_cli')):
@@ -406,6 +478,8 @@ def policy_projection(row: dict, limit: int) -> dict:
 
 
 def effective_lane(metadata: dict) -> str:
+    if metadata.get('role') == 'context_document' and metadata.get('primary_owner_evidence') is False:
+        return metadata.get('input_attribution_class', metadata.get('input_lane', 'context_document'))
     if metadata.get('platform') in ('codex', 'codex_cli') and any(
             'native_message_policy' in parent for parent in metadata['parents']):
         return metadata.get('input_attribution_class', metadata.get('input_lane', metadata.get('role', 'unknown')))
@@ -483,10 +557,15 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
                  'completed': completed, 'failed': [r['query'] for r in facet_records if r['state'] == 'failed'],
                  'deferred': [r['query'] for r in facet_records if r['state'] == 'budget-deferred'],
                  'omitted_by_limit': [], 'facets': facet_records}
-    policy_facets = [{'query': facet, **native_policy_fields(st, data)} for facet, data in results
+    policy_facets = [{'query': facet, **{k:v for k,v in native_policy_fields(st, data).items() if k != 'source_policy'}} for facet, data in results
                     if 'native_message_policy' in data or 'frozen_provenance' in data]
     policy_output = {'native_message_policy': {'scope': 'executed query facets; backend receipts retained',
                                               'facets': policy_facets}} if policy_facets else {}
+    document_facets = [{'query': facet, 'source_policy': native_policy_fields(st, data)['source_policy']}
+                       for facet, data in results if 'source_policy' in data]
+    if document_facets:
+        policy_output['source_policy'] = {'scope': 'executed query facets; document receipts retained separately from native transport policy',
+                                          'facets': document_facets}
     return {'status': 'leads' if leads else 'no-leads' if results else 'lexical-unavailable' if lexical else 'semantic-unavailable',
             **policy_output,
             'kind': expected_kind, 'backend': 'semantic-archive',
@@ -773,6 +852,16 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
                 if (not isinstance(policy, dict) or policy.get('helper_sha256') != NATIVE_ROLE_POLICY_SHA
                         or policy.get('original_origin_verified') is not False):
                     raise ValueError('invalid native context policy receipt')
+            if 'source_policy' in row:
+                if (row['source_policy'] != result.get('source_policy')
+                        or result.get('input_lane') != 'context_document'
+                        or row.get('role') != 'context_document'
+                        or row.get('author', {}).get('role') != 'context_document'
+                        or row.get('effective_input_attribution_class') != 'context_document'
+                        or row.get('owner') is not False
+                        or row.get('primary_owner_evidence') is not False
+                        or row.get('indexed_owner_parent') is not False):
+                    raise ValueError('invalid document context policy receipt')
             if row.get('policy_display_projection') is True:
                 clean = policy_projection(row, remaining)
             else:
@@ -826,8 +915,38 @@ def generic_hydrate(st: dict, args, metadata_only: bool = False) -> dict:
             for row in result['messages'])
         if provenance.get('platform') == 'discord' and provenance.get('kind') == 'conversation':
             result['original_episode'] = original_episode(st, args, result, deadline)
+        elif (provenance.get('platform') == 'icloud' and provenance.get('kind') == 'document'
+              and (provenance.get('source') or {}).get('family') == 'icloud_notes'):
+            result['original_document'] = original_document(st, result, deadline)
     return result
 
+
+def original_document(st: dict, normalized: dict, deadline: float) -> dict:
+    """Add source coordinates without replacing document provenance or body."""
+    failure = {'status': 'unavailable', 'namespace': 'icloud-restored-note-export',
+               'mapping_complete': False, 'source_bodies_returned': False,
+               'owner_evidence_eligible': False, 'input_lane': 'context_document',
+               'data_not_instructions': True}
+    try:
+        resolver = original_resolver_module()
+        io = types.SimpleNamespace(guarded=guarded, restricted=restricted,
+            source_path=source_path, generic_provenance=generic_provenance,
+            normalized_message_view=normalized_message_view)
+        # Shared deadline and cumulative counter cover code and all supplement
+        # reads. Backend-internal reads have separate existing bounds; they are
+        # not asserted to be measured by this counter.
+        state = {'deadline': deadline, 'bytes_read': 0}
+        raw, pin = resolver.read_source(NOTE_CAPTURE_READER, io, state, 1024 * 1024)
+        resolver.require(pin['sha256'] == NOTE_CAPTURE_READER_SHA,
+                         'note-reader-code-pin-mismatch')
+        module = types.ModuleType('pye_original_note_reader')
+        module.__file__ = str(NOTE_CAPTURE_READER)
+        exec(compile(raw, str(NOTE_CAPTURE_READER), 'exec'), module.__dict__)
+        return module.resolve_original_document(st, normalized, helper_io=io,
+            resolver_io=resolver, deadline=deadline, read_state=state)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError) as error:
+        failure['diagnostic'] = 'note-original-reader-unavailable:' + type(error).__name__
+        return failure
 
 def original_resolver_module():
     raw = ORIGINAL_RESOLVER.read_bytes()
