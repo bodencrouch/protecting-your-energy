@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-WORKFLOW_SHA = 'b9dc1d416f1ce52269c731f27732efaee9176054e76a173749d679142e362e06'
+WORKFLOW_SHA = '0e8ae597a90058202fe1f20bff9747ce0580f45f4438f5308e92fade4fc6450b'
 MEANING_SHA = '0dafabb4333dcdcc8b069d3324f37de7df05f002c8f9889b56710093c3d1f519'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',

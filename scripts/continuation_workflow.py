@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = 'cda0b5dec28f691adcbf09d21e1bbd8304f0f48ad3fd4e60b8d1436fa3eb1869'
+COMPILER_SHA = '2cc0083289dbf42bd90602c6c23454882effcd0494028b528c8dfbc6ca4ab0ba'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072

@@ -1180,7 +1180,7 @@ def main(argv=None):
     parser.add_argument('--query', action='append', default=[], help='Forward an exact retrieval facet; at most six')
     parser.add_argument('--probe', action='append', default=[], help='Supply a provisional search hypothesis; at most two')
     parser.add_argument('--unit-id', action='append', default=[], help='Forward a lowercase SHA256 source anchor; at most six')
-    parser.add_argument('--scope-unit-id', help='Scope dense retrieval to one exact captured conversation')
+    parser.add_argument('--scope-unit-id', help='Scope dense retrieval to one normalized conversation provenance group; original membership requires hydration')
     parser.add_argument('--correction', action='append', default=[], help='Current correction kept in memory')
     parser.add_argument('--corrections-stdin', action='store_true', help='Read a JSON list of correction strings, or {"corrections": [...]}')
     parser.add_argument('--timeout', type=float, default=90, help='Canonical subprocess deadline in seconds, 1..120')
