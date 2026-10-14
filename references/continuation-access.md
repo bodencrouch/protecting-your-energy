@@ -70,6 +70,22 @@ unselected. This lexical rule cannot establish semantic applicability. An unqual
 resume without a matching association returns selection guidance without dumping history. A substantive cue
 can retrieve evidence even when no saved task matches.
 
+When a substantive cue remains unselected and a host execution context is
+available, `selection.execution_bound_candidates` exposes up to twelve enabled
+association IDs and bounded goals. The existing binding resolver validates them;
+invalid bindings remain unavailable and multiple matches remain provisional.
+The compiler discards the resolver's selected row and sets
+`selection_permitted=false` and `semantic_selection=false` for this discovery.
+Existing lexical candidates and selection status remain unchanged. An explicit
+task ID or a selected lexical task bypasses discovery.
+The host can use the live conversation to resolve relevance and rerun with
+`--task-id`. A binding does not establish relevance, evidence, permissions or
+current requirements. Candidate task bodies and proposals are not loaded.
+Missing caller context supplies no candidates; invalid or conflicting context
+cannot establish uniqueness. Submission transport uses its own host namespace,
+including for this discovery, without inheriting another harness's identity.
+This behavior adds no model call, automatic invocation or durable profile.
+
 The existing private configuration supplies the state path. Its containing
 directory is the derived root unless `derived_root` is configured. Direct
 state reads avoid the state writer's lock creation. Only the selected current

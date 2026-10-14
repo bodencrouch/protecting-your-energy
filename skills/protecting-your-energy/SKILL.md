@@ -35,6 +35,10 @@ For a request that depends on earlier work, prepare resumed context with
 `python3 scripts/continuation.py` from this plugin's root. Pass the rough request as one
 argument; use the current conversation to resolve any ambiguous task candidates.
 Lexical coverage can miss a valid continuation containing new subject matter.
+For an unselected substantive cue, execution-bound candidate metadata may expose
+existing task IDs and goals from the caller's host association. These provisional
+candidates do not establish relevance or load saved bodies. Resolve applicability
+from the live conversation before explicitly selecting an existing ID.
 When the live conversation clearly links a returned candidate, the host may select
 its existing ID with `--task-id`; record this as host selection, not an automatic
 semantic match. Do not require the owner to supply an ID. When that link is uncertain,

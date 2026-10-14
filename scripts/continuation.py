@@ -285,13 +285,59 @@ def is_bare_resume(cue):
                 cue.casefold())))
 
 
+def execution_bound_candidates(state, args):
+    """Expose association metadata, never the resolver's selected task row."""
+    harness = getattr(args, 'execution_harness', None)
+    context_id = getattr(args, 'execution_context_id', None)
+    context_error = getattr(args, 'execution_context_error', None)
+    if harness is None and context_id is None and context_error is None:
+        context_id = os.environ.get('CODEX_THREAD_ID') or None
+        harness = 'codex' if context_id is not None else None
+    if harness is None and context_id is None and context_error is None:
+        return None
+    if context_error is None and harness is not None and context_id is None:
+        resolved = {'status': 'not-applicable', 'reason': 'caller-context-not-supplied'}
+    elif context_error is not None or harness is None or context_id is None:
+        resolved = {'status': 'invalid-execution-context',
+                    'error': 'caller-context-incomplete-or-conflicting'}
+    else:
+        # The pure resolver remains the single binding validator. Its resume
+        # gate permits that validation; it does not authorize selection here.
+        resolved, _ = execution_context_module()(
+            state, harness=harness, context_id=context_id, unqualified_resume=True)
+    status = resolved['status']
+    result = {'status': 'available' if status in ('selected', 'needs-selection') else status,
+              'method': 'execution-bound-candidate-discovery',
+              'binding_resolution_status': status,
+              'selection_permitted': False, 'semantic_selection': False,
+              'candidates': resolved.get('candidates', []),
+              'candidate_count': resolved.get('candidate_count'),
+              'candidates_truncated': resolved.get('candidates_truncated', False),
+              'selection_option': '--task-id',
+              'qualifiers': [
+                  'Candidates are provisional execution associations, not a selected task.',
+                  'Caller context is host-supplied; human identity is not authenticated.',
+                  'Bindings do not establish semantic relevance, evidence, permission, or current requirements.',
+                  'The host may resolve relevance from the live conversation and explicitly select an existing task ID.',
+                  'No candidate task bodies or proposals have been loaded.']}
+    for key in ('caller_context', 'available_task_count', 'reason', 'error'):
+        if key in resolved:
+            result[key] = resolved[key]
+    return result
+
+
 def select_for_request(state, cue, args):
-    """Use an explicit execution binding only for an unqualified resume."""
+    """Preserve selection and expose metadata for an unresolved substantive cue."""
     if args.task_id is not None:
         return select_task(state, cue, args.task_id)
     unqualified = is_bare_resume(cue)
     if not unqualified:
-        return select_task(state, cue)
+        selection, row = select_task(state, cue)
+        if row is None and words(cue):
+            candidates = execution_bound_candidates(state, args)
+            if candidates is not None:
+                selection = {**selection, 'execution_bound_candidates': candidates}
+        return selection, row
     harness = getattr(args, 'execution_harness', None)
     context_id = getattr(args, 'execution_context_id', None)
     if harness is not None or context_id is not None:

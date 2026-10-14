@@ -15,7 +15,7 @@ import sys
 import types
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '4aaf4043722cf88e92a50131fce14cf05ee7a5c70b9543fa31457779aec8a454'
+COMPILER_SHA = '73ad29f7db497c17b55301455f24f63ceb037ed89354fc905ffa8d443357be57'
 INPUT_LIMIT = 256 * 1024
 OUTPUT_LIMIT = 1024 * 1024
 
@@ -58,12 +58,14 @@ def submission_args(compiler, event, cli):
                    for item in corrections)):
         raise SubmissionError('submission-corrections-outside-bounds')
 
-    # Substantive requests and explicit task choices do not consult an execution
-    # association. In particular an inner client cannot inherit a different
-    # harness's context identity merely by being launched by that host.
+    # Supply this transport's own host identity for provisional discovery too.
+    # An inner client must not inherit a different harness's context identity.
     context_id = None
     context_basis = 'not-used'
-    if cli.task_id is None and compiler.is_bare_resume(cue):
+    context_error = None
+    bare_resume = compiler.is_bare_resume(cue)
+    context_lookup = cli.task_id is None and (bare_resume or not cli.hook_output)
+    if context_lookup:
         context_id = cli.execution_context_id
         if context_id is not None:
             context_basis = 'explicit-cli-context'
@@ -77,15 +79,23 @@ def submission_args(compiler, event, cli):
             else:
                 context_basis = 'not-supplied'
         if context_id is not None and not isinstance(context_id, str):
-            raise SubmissionError('submission-context-id-invalid')
-        if cli.harness == 'claude' and context_id is None:
+            if bare_resume:
+                raise SubmissionError('submission-context-id-invalid')
+            context_error = 'submission-context-id-invalid'
+        if bare_resume and cli.harness == 'claude' and context_id is None:
             raise SubmissionError('claude-context-id-not-supplied')
         if (cli.execution_context_id is not None and event.get('session_id') is not None
                 and cli.execution_context_id != event['session_id']):
-            raise SubmissionError('submission-context-id-conflict')
+            if bare_resume:
+                raise SubmissionError('submission-context-id-conflict')
+            context_error = 'submission-context-id-conflict'
+        if context_error is not None:
+            context_id = None
+            context_basis = 'unavailable-invalid-or-conflicting-context'
     args = argparse.Namespace(
-        cue=[cue], task_id=cli.task_id, execution_harness=cli.harness if context_id is not None else None,
-        execution_context_id=context_id, query=[], probe=[], unit_id=[],
+        cue=[cue], task_id=cli.task_id,
+        execution_harness=cli.harness if context_id is not None or (context_lookup and not bare_resume) else None,
+        execution_context_id=context_id, execution_context_error=context_error, query=[], probe=[], unit_id=[],
         correction=corrections, corrections_stdin=False, timeout=cli.timeout, full=False)
     return args, {'harness': cli.harness, 'context_basis': context_basis,
                   'context_id': context_id, 'human_identity_authenticated': False,
