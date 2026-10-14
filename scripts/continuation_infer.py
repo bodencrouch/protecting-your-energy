@@ -181,7 +181,8 @@ def writer_schema(transport, units, meaning=None, bundle=None, catalog=None):
         if not anchors:
             slots[uid] = {'type': 'null'}
             continue
-        roles = ['owner-attributed-source', 'context-only'] if owner_source_available(unit) else ['context-only']
+        roles = (['owner-attributed-source', 'context-only'] if any(
+            'owner-attributed-source' in item['permitted_roles'] for item in anchors.values()) else ['context-only'])
         anchor_choices = [transport.object_schema({
             'handle': {'type': 'string', 'enum': [handle]},
             'quote': {'type': 'string', 'minLength': 1, 'maxLength': 1024},
