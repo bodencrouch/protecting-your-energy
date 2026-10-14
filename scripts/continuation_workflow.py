@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '2cc0083289dbf42bd90602c6c23454882effcd0494028b528c8dfbc6ca4ab0ba'
+COMPILER_SHA = '8040727c721b5f68805789580c17cc967341a5546ac6c3ddca483de5c861f83a'
 PROMPT_LIMIT = 1048576
 OUTPUT_LIMIT = 1048576
 ARTIFACT_LIMIT = 131072
@@ -626,6 +626,7 @@ def main(argv=None):
     parser.add_argument('--probe', action='append', default=[])
     parser.add_argument('--unit-id', action='append', default=[])
     parser.add_argument('--scope-unit-id')
+    parser.add_argument('--message-rerank', action='store_true')
     parser.add_argument('--correction', action='append', default=[])
     parser.add_argument('--corrections-stdin', action='store_true')
     parser.add_argument('--timeout', type=float, default=90, help='Retrieval deadline, 1..120 seconds')

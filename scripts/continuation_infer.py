@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-WORKFLOW_SHA = '0e8ae597a90058202fe1f20bff9747ce0580f45f4438f5308e92fade4fc6450b'
+WORKFLOW_SHA = 'ac08971c649fa637a9a10fd69723d30d7f681e7f3baa1812aba98da9c5c4bc7a'
 MEANING_SHA = '0dafabb4333dcdcc8b069d3324f37de7df05f002c8f9889b56710093c3d1f519'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
@@ -525,6 +525,7 @@ def main(argv=None):
     parser.add_argument('--query', action='append', default=[])
     parser.add_argument('--unit-id', action='append', default=[])
     parser.add_argument('--scope-unit-id')
+    parser.add_argument('--message-rerank', action='store_true')
     parser.add_argument('--correction', action='append', default=[])
     inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument('--corrections-stdin', action='store_true')

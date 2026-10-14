@@ -697,7 +697,9 @@ class OwnedChildren:
                 'error': failure if failure else None}
 
 
-def canonical_reclaim(cue, queries, unit_ids, timeout, scope_unit_id=None):
+def canonical_reclaim(cue, queries, unit_ids, timeout, scope_unit_id=None, message_rerank=False):
+    if message_rerank and (not scope_unit_id or any(query != cue for query in queries)):
+        raise ContextError('message-rerank-requires-scope-and-one-facet')
     command = [str(RECLAIM), 'reclaim', '--stdout', '--limit', '12']
     for query in queries:
         command.extend(['--query', query])
@@ -705,6 +707,8 @@ def canonical_reclaim(cue, queries, unit_ids, timeout, scope_unit_id=None):
         command.extend(['--unit-id', unit_id])
     if scope_unit_id:
         command.extend(['--scope-unit-id', scope_unit_id])
+    if message_rerank:
+        command.append('--message-rerank')
     command.extend(['--', cue])
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
     output = bytearray()
@@ -757,6 +761,12 @@ def canonical_reclaim(cue, queries, unit_ids, timeout, scope_unit_id=None):
                         or not any(isinstance(item, dict) and item.get('scope_unit_id') == scope_unit_id
                                    for item in scopes)):
                     failure = 'canonical-conversation-scope-unavailable'
+                if message_rerank:
+                    reranks = [facet.get('message_reranking') for query in retrieval.get('queries', [])
+                               for facet in query.get('query_execution', {}).get('facets', [])]
+                    if (retrieval.get('requested_message_rerank') is not True or len(reranks) != 1
+                            or not isinstance(reranks[0], dict) or reranks[0].get('status') != 'complete'):
+                        failure = 'canonical-message-rerank-unavailable'
     except (OSError, ValueError, UnicodeError, RecursionError) as error:
         failure = safe_error(error) if isinstance(error, ContextError) else 'canonical-unavailable-or-invalid-json'
     finally:
@@ -1130,6 +1140,9 @@ def retrieve_context(prepared, args, probes=None, *, retrieve=True):
     """
     cue = prepared['current_request']['cue']
     scope_unit_id = getattr(args, 'scope_unit_id', None)
+    message_rerank = getattr(args, 'message_rerank', False)
+    if message_rerank and (not scope_unit_id or not retrieve):
+        raise ContextError('message-rerank-requires-scoped-retrieval')
     if scope_unit_id and (not isinstance(scope_unit_id, str) or not re.fullmatch('[0-9a-f]{64}', scope_unit_id)):
         raise ContextError('conversation-scope-unit-invalid')
     if scope_unit_id and not retrieve:
@@ -1155,13 +1168,15 @@ def retrieve_context(prepared, args, probes=None, *, retrieve=True):
     elif not retrieve:
         evidence = {'status': 'not-attempted', 'reason': 'retrieval-skipped-by-caller', 'complete': False}
     elif substantive:
-        evidence = canonical_reclaim(cue, queries, args.unit_id, args.timeout, scope_unit_id)
+        evidence = canonical_reclaim(cue, queries, args.unit_id, args.timeout, scope_unit_id, message_rerank)
         plan['dispatch_status'] = 'canonical-reclaim-requested'
     else:
         evidence = {'status': 'not-attempted', 'reason': 'unqualified-resume-requires-selection', 'complete': False}
     plan['canonical_status'] = evidence.get('status')
     if scope_unit_id:
         plan['requested_scope_unit_id'] = scope_unit_id
+    if message_rerank:
+        plan['requested_message_rerank'] = True
     if not getattr(args, 'full', False) and isinstance(evidence.get('packet'), dict):
         evidence = {**evidence, 'packet': compact_packet(evidence['packet'])}
     return {**prepared, 'query_plan': plan, 'canonical_evidence': evidence}
@@ -1181,6 +1196,7 @@ def main(argv=None):
     parser.add_argument('--probe', action='append', default=[], help='Supply a provisional search hypothesis; at most two')
     parser.add_argument('--unit-id', action='append', default=[], help='Forward a lowercase SHA256 source anchor; at most six')
     parser.add_argument('--scope-unit-id', help='Scope dense retrieval to one normalized conversation provenance group; original membership requires hydration')
+    parser.add_argument('--message-rerank', action='store_true')
     parser.add_argument('--correction', action='append', default=[], help='Current correction kept in memory')
     parser.add_argument('--corrections-stdin', action='store_true', help='Read a JSON list of correction strings, or {"corrections": [...]}')
     parser.add_argument('--timeout', type=float, default=90, help='Canonical subprocess deadline in seconds, 1..120')
