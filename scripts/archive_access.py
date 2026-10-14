@@ -515,6 +515,8 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
         if getattr(args, 'scope_unit_id', None):
             cmd = ['--scope-unit-id', args.scope_unit_id,
                    '--scope-scan-budget', str(min(20, max(1, remaining - 1)))] + cmd
+        if getattr(args, 'message_rerank', False):
+            cmd = ['--message-rerank', '--message-rerank-budget', str(min(45, max(1, remaining - 12)))] + cmd
         if generation: cmd += ['--generation', generation]
         if getattr(args, 'include_unconfirmed_input', False): cmd += ['--include-unconfirmed-input']
         if getattr(args, 'include_context_documents', False): cmd += ['--include-context-documents']
@@ -532,6 +534,7 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
         failures.extend(source_failures)
         record.update(state='completed', returned_leads=len(data.get('leads', [])),
                       conversation_scope=data.get('conversation_scope'),
+                      message_reranking=data.get('message_reranking'),
                       source_failures=source_failures, source_verification_complete=not bool(source_failures))
         results.append((facet, data))
     leads, seen = [], set()
@@ -548,6 +551,7 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
             metadata = generic_provenance(st, row.get('provenance'))
             seen.add(uid)
             leads.append({'unit_id': uid, 'score': row.get('similarity'), 'provenance': metadata,
+                          **{k: row[k] for k in ('ranking_method', 'packed_similarity', 'parent_similarity') if k in row},
                           **native_policy_fields(st, row),
                           'input_lane': effective_lane(metadata),
                           'platform': metadata.get('platform'), 'year': metadata.get('year'),
@@ -1266,12 +1270,16 @@ def query_facets(st: dict, args) -> list[str]:
         raise ValueError('scope-unit-id requires a valid published dense conversation anchor')
     if getattr(args, 'source_prefix', None) and args.mode in ('auto', 'semantic'):
         raise ValueError('source-prefix is only a paths fallback; use scope-unit-id for dense conversation scope')
+    if getattr(args, 'message_rerank', False) and (not scope_unit or args.mode not in ('auto', 'semantic')):
+        raise ValueError('message reranking requires dense conversation scope')
     if getattr(args, 'include_unconfirmed_input', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic', 'lexical')):
         raise ValueError('unconfirmed input requires the semantic-archive published route')
     if getattr(args, 'include_context_documents', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic', 'lexical')):
         raise ValueError('context documents require the semantic-archive published route')
     requested = list(dict.fromkeys(q.strip() for q in args.query if q.strip()))
     if not requested: raise ValueError('at least one nonempty query is required')
+    if getattr(args, 'message_rerank', False) and len(requested) != 1:
+        raise ValueError('message reranking supports one semantic facet per bounded request')
     if st.get('dense', {}).get('backend') == 'semantic-archive' and args.mode in ('auto', 'semantic', 'lexical'):
         generation = getattr(args, 'generation', None)
         if generation and not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', generation):
@@ -1625,6 +1633,7 @@ def main() -> int:
     q = sub.add_parser('query'); q.add_argument('--query', action='append', required=True)
     q.add_argument('--source-prefix', help='Optional original subtree for the path fallback'); q.add_argument('--year'); q.add_argument('--platform'); q.add_argument('--limit', type=int, default=5)
     q.add_argument('--scope-unit-id', help='Rank dense meaning matches within one exact indexed conversation capture')
+    q.add_argument('--message-rerank', action='store_true', help='Rerank one scoped dense facet by verified owner parent windows in RAM')
     q.add_argument('--budget', type=float, default=20); q.add_argument('--mode', choices=('auto','lexical','semantic','paths'), default='auto')
     q.add_argument('--include-unconfirmed-input', action='store_true', help='Include inputs whose human authorship is unconfirmed')
     q.add_argument('--include-context-documents', action='store_true', help='Include context documents without promoting them to owner evidence')
