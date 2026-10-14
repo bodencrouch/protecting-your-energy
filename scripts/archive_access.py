@@ -1632,7 +1632,7 @@ def main() -> int:
     c = sub.add_parser('catalog'); c.add_argument('--query'); c.add_argument('--limit', type=int, default=10); c.add_argument('--offset', type=int, default=0)
     q = sub.add_parser('query'); q.add_argument('--query', action='append', required=True)
     q.add_argument('--source-prefix', help='Optional original subtree for the path fallback'); q.add_argument('--year'); q.add_argument('--platform'); q.add_argument('--limit', type=int, default=5)
-    q.add_argument('--scope-unit-id', help='Rank dense meaning matches within one exact indexed conversation capture')
+    q.add_argument('--scope-unit-id', help='Rank within one indexed normalized conversation provenance group; original membership requires hydration')
     q.add_argument('--message-rerank', action='store_true', help='Rerank one scoped dense facet by verified owner parent windows in RAM')
     q.add_argument('--budget', type=float, default=20); q.add_argument('--mode', choices=('auto','lexical','semantic','paths'), default='auto')
     q.add_argument('--include-unconfirmed-input', action='store_true', help='Include inputs whose human authorship is unconfirmed')
