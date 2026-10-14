@@ -149,6 +149,15 @@ author and observed versions in the original; a snapshot manifest window does
 not prove its last message date. Use it when a stale Parquet index omits a newer
 source, then follow the original conversation instead of declaring it absent.
 
+The catalog is a separately configured capture inventory and can lag ingestion.
+Normalized unit metadata may retain numeric conversation IDs without the current
+channel display name. A failed name lookup therefore does not establish source
+absence. Resolve the capture through catalog metadata or a bounded `paths` lookup,
+then verify its original header, actual dates and hash before selecting message
+parents. Retain older captures when adding fresh metadata. Observed channel names
+may change across captures; a shared conversation ID does not establish physical
+identity, ownership of every statement or adoption of a peer's proposal.
+
 Begin with the current purpose, audience and decision. Expand a rough cue into
 separate facets rather than joining all related words into one phrase:
 
