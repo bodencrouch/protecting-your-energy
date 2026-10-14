@@ -512,6 +512,9 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
         cmd = (['--query-mode', 'lexical'] if lexical else []) + ['query', facet, '--limit', str(args.limit), '--preview-chars', '0']
         if args.year: cmd += ['--year', args.year]
         if args.platform: cmd += ['--platform', args.platform]
+        if getattr(args, 'scope_unit_id', None):
+            cmd = ['--scope-unit-id', args.scope_unit_id,
+                   '--scope-scan-budget', str(min(20, max(1, remaining - 1)))] + cmd
         if generation: cmd += ['--generation', generation]
         if getattr(args, 'include_unconfirmed_input', False): cmd += ['--include-unconfirmed-input']
         if getattr(args, 'include_context_documents', False): cmd += ['--include-context-documents']
@@ -528,6 +531,7 @@ def generic_query(st: dict, args, facets: list[str]) -> dict:
         source_failures = data.get('failures', [])
         failures.extend(source_failures)
         record.update(state='completed', returned_leads=len(data.get('leads', [])),
+                      conversation_scope=data.get('conversation_scope'),
                       source_failures=source_failures, source_verification_complete=not bool(source_failures))
         results.append((facet, data))
     leads, seen = [], set()
@@ -1255,6 +1259,13 @@ def dense_query(st: dict, args, facets: list[str]) -> dict:
 
 
 def query_facets(st: dict, args) -> list[str]:
+    scope_unit = getattr(args, 'scope_unit_id', None)
+    if scope_unit and (not re.fullmatch('[0-9a-f]{64}', scope_unit)
+            or st.get('dense', {}).get('backend') != 'semantic-archive'
+            or args.mode not in ('auto', 'semantic')):
+        raise ValueError('scope-unit-id requires a valid published dense conversation anchor')
+    if getattr(args, 'source_prefix', None) and args.mode in ('auto', 'semantic'):
+        raise ValueError('source-prefix is only a paths fallback; use scope-unit-id for dense conversation scope')
     if getattr(args, 'include_unconfirmed_input', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic', 'lexical')):
         raise ValueError('unconfirmed input requires the semantic-archive published route')
     if getattr(args, 'include_context_documents', False) and (st.get('dense', {}).get('backend') != 'semantic-archive' or args.mode not in ('auto', 'semantic', 'lexical')):
@@ -1442,7 +1453,8 @@ def query(st: dict, args) -> dict:
     requested = query_facets(st, args)
     facets = requested[:3]
     media = None
-    if args.mode in ('auto', 'semantic') and st.get('access', {}).get('derived_media'):
+    if (args.mode in ('auto', 'semantic') and st.get('access', {}).get('derived_media')
+            and not getattr(args, 'scope_unit_id', None)):
         command = ['query', '--limit', str(min(args.limit,16))]
         for facet in facets: command += ['--query', facet]
         if args.year: command += ['--year', args.year]
@@ -1612,6 +1624,7 @@ def main() -> int:
     c = sub.add_parser('catalog'); c.add_argument('--query'); c.add_argument('--limit', type=int, default=10); c.add_argument('--offset', type=int, default=0)
     q = sub.add_parser('query'); q.add_argument('--query', action='append', required=True)
     q.add_argument('--source-prefix', help='Optional original subtree for the path fallback'); q.add_argument('--year'); q.add_argument('--platform'); q.add_argument('--limit', type=int, default=5)
+    q.add_argument('--scope-unit-id', help='Rank dense meaning matches within one exact indexed conversation capture')
     q.add_argument('--budget', type=float, default=20); q.add_argument('--mode', choices=('auto','lexical','semantic','paths'), default='auto')
     q.add_argument('--include-unconfirmed-input', action='store_true', help='Include inputs whose human authorship is unconfirmed')
     q.add_argument('--include-context-documents', action='store_true', help='Include context documents without promoting them to owner evidence')
