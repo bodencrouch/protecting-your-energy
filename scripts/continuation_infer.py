@@ -10,7 +10,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
-WORKFLOW_SHA = '49742de08a56a7eb7d4eeb931449324b7ddb4d98ebf90c0e62279e05e289cd5d'
+WORKFLOW_SHA = 'b9dc1d416f1ce52269c731f27732efaee9176054e76a173749d679142e362e06'
 MEANING_SHA = '0dafabb4333dcdcc8b069d3324f37de7df05f002c8f9889b56710093c3d1f519'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
@@ -418,7 +418,7 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
             plan = validate_plan(transport, sanitize({'plan': response})['plan'], meaning, catalog)
         meaning_bundle = (plan['meaning'] if plan is not None else host_meaning) if meaning is not None else None
         probes = plan['probes'] if plan is not None else []
-        retrieve = bool(args.query or args.unit_id) or (plan is not None and plan['memory_useful'])
+        retrieve = bool(args.query or args.unit_id or getattr(args, 'scope_unit_id', None)) or (plan is not None and plan['memory_useful'])
         failed_stage, candidate = 'canonical-context', None
         context = sanitize(compiler.retrieve_context(prepared_raw, args, probes, retrieve=retrieve))
         if digest(transport, context['current_native_sources']) != captured_native_hash:
@@ -524,6 +524,7 @@ def main(argv=None):
     parser.add_argument('--execution-context-id', help='Use an exact context ID with --execution-harness')
     parser.add_argument('--query', action='append', default=[])
     parser.add_argument('--unit-id', action='append', default=[])
+    parser.add_argument('--scope-unit-id')
     parser.add_argument('--correction', action='append', default=[])
     inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument('--corrections-stdin', action='store_true')

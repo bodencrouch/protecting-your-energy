@@ -15,7 +15,7 @@ import sys
 import types
 
 sys.dont_write_bytecode = True
-COMPILER_SHA = '73ad29f7db497c17b55301455f24f63ceb037ed89354fc905ffa8d443357be57'
+COMPILER_SHA = 'cda0b5dec28f691adcbf09d21e1bbd8304f0f48ad3fd4e60b8d1436fa3eb1869'
 INPUT_LIMIT = 256 * 1024
 OUTPUT_LIMIT = 1024 * 1024
 
@@ -96,6 +96,7 @@ def submission_args(compiler, event, cli):
         cue=[cue], task_id=cli.task_id,
         execution_harness=cli.harness if context_id is not None or (context_lookup and not bare_resume) else None,
         execution_context_id=context_id, execution_context_error=context_error, query=[], probe=[], unit_id=[],
+        scope_unit_id=getattr(cli, 'scope_unit_id', None),
         correction=corrections, corrections_stdin=False, timeout=cli.timeout, full=False)
     return args, {'harness': cli.harness, 'context_basis': context_basis,
                   'context_id': context_id, 'human_identity_authenticated': False,
@@ -109,9 +110,12 @@ def main(argv=None):
     parser.add_argument('--task-id')
     parser.add_argument('--hook-output', action='store_true')
     parser.add_argument('--retrieve', action='store_true', help='Also use the existing canonical retrieval route')
+    parser.add_argument('--scope-unit-id')
     parser.add_argument('--timeout', type=float, default=90)
     cli = parser.parse_args(argv)
     try:
+        if cli.scope_unit_id and not cli.retrieve:
+            raise SubmissionError('conversation-scope-requires-retrieval')
         if cli.hook_output and cli.retrieve:
             raise SubmissionError('canonical-retrieval-requires-explicit-host-invocation')
         raw = sys.stdin.buffer.read(INPUT_LIMIT + 1)
