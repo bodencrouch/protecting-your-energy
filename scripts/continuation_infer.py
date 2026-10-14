@@ -11,6 +11,7 @@ import sys
 
 sys.dont_write_bytecode = True
 WORKFLOW_SHA = '1866bc5ea0f97bb795f075f1882ff2db82732ff3ea5bbfdec9150793363b655b'
+MEANING_SHA = '9857f4474eb484c2cf1aadb32dfa2a296a52d759c85178c3cbc5a53ce63f5214'
 INPUT_LIMIT = 262144
 VALIDATION_CODES = frozenset(('stage-string-schema-invalid', 'stage-list-schema-invalid',
     'stage-object-keys-invalid', 'provisional-plan-memory-schema-invalid',
@@ -57,6 +58,34 @@ purpose or loss. Preserve the requested felt stakes as well as observable outcom
 Give the artifact, not instructions for someone else to make it. Return
 only the JSON object matching the supplied schema.'''
 
+MEANING_PLAN_RULES = '''The optional meaning contract is provisional, not owner
+facts or current corrections. Return meaning {candidates:[...],rationale:string}.
+Use zero candidates with a concise rationale when the request is clear or useful
+competing readings are unsupported; do not fabricate ambiguity. Otherwise propose
+at most two genuinely different plausible interpretations with material artifact
+differences. Make actor, experiencer, target, relation, polarity, modality and
+condition explicit; use null for unspecified slots rather than inventing values.
+Support and counterevidence quote exact unique spans within ONE catalog field.
+At least one support anchor must be current caller or qualified native input.
+Proposals may contextualize interpretation but are not owner evidence. Generated
+source accounts remain hypotheses and cannot be quote anchors. Catalog role is
+assigned by the route; JSON pointers locate displayed fields in this DATA payload.
+Keep current corrections above earlier input and never turn candidate text into
+a new correction or settled requirement. Exact quote matches do not prove meaning.'''
+
+MEANING_WRITE_RULES = '''Return meaning_dispositions with every supplied candidate
+ID as an exact key, and no extra IDs. Each status is resolved, rejected or unresolved.
+Resolution or rejection requires exact unique current/native distinguishing_evidence
+and an explanation of HOW that evidence distinguishes the interpretations, under
+current corrections' priority. Qualified retrieved history may inform the explanation
+with its limits, but cannot substitute for current/native distinguishing anchors.
+An anchor's presence alone does not settle meaning. For unresolved material
+differences, make useful variants or a shared artifact valid under all retained
+readings; do not silently choose one. Explain the actual artifact_consequence and
+quote one to three exact unique displayed artifact spans showing that consequence.
+These schema/location checks leave semantic fidelity and usefulness unverified.
+Return the actual artifact; do not replace it with the disposition audit.'''
+
 
 class InferError(ValueError):
     pass
@@ -75,21 +104,38 @@ def load_transport():
     return module
 
 
+def load_meaning():
+    path = Path(__file__).resolve().with_name('meaning_contract.py')
+    if path.is_symlink() or path.resolve().parent != Path(__file__).resolve().parent:
+        raise InferError('meaning-helper-location-invalid')
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != MEANING_SHA:
+        raise InferError('meaning-helper-hash-mismatch')
+    spec = importlib.util.spec_from_file_location('pye_meaning_contract', path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module
+
+
 def digest(transport, value):
     return hashlib.sha256(transport.encoded(value)).hexdigest()
 
 
-def plan_schema(transport):
+def plan_schema(transport, meaning=None, catalog=None):
     text = {'type': 'string', 'minLength': 1, 'maxLength': 2048}
     texts = lambda count: {'type': 'array', 'items': text, 'maxItems': count}
-    return transport.object_schema({'purpose': text, 'reader_effect': text, 'local_scope': text,
+    properties = {'purpose': text, 'reader_effect': text, 'local_scope': text,
         'creative_options': texts(3), 'uncertainties': texts(8),
-        'memory_useful': {'type': 'boolean'}, 'probes': texts(2)})
+        'memory_useful': {'type': 'boolean'}, 'probes': texts(2)}
+    if meaning is not None:
+        properties['meaning'] = meaning.bundle_schema(catalog)
+    return transport.object_schema(properties)
 
 
-def validate_plan(transport, value):
-    transport.exact_keys(value, ('purpose', 'reader_effect', 'local_scope', 'creative_options',
-                                 'uncertainties', 'memory_useful', 'probes'))
+def validate_plan(transport, value, meaning=None, catalog=None):
+    keys = ('purpose', 'reader_effect', 'local_scope', 'creative_options',
+            'uncertainties', 'memory_useful', 'probes')
+    transport.exact_keys(value, keys + (('meaning',) if meaning is not None else ()))
     for field in ('purpose', 'reader_effect', 'local_scope'):
         transport.string(value[field], 2048)
     for field, limit in (('creative_options', 3), ('uncertainties', 8), ('probes', 2)):
@@ -97,10 +143,12 @@ def validate_plan(transport, value):
             transport.string(text, 2048)
     if type(value['memory_useful']) is not bool or (not value['memory_useful'] and value['probes']):
         raise InferError('provisional-plan-memory-schema-invalid')
+    if meaning is not None:
+        meaning.validate_bundle(value['meaning'], catalog)
     return value
 
 
-def writer_schema(transport, units):
+def writer_schema(transport, units, meaning=None, bundle=None, catalog=None):
     text = {'type': 'string', 'minLength': 1, 'maxLength': 4096}
     slots = {}
     for uid, unit in units.items():
@@ -109,10 +157,13 @@ def writer_schema(transport, units):
             'evidence_role': {'type': 'string', 'enum': roles}, 'limitations': text})
         slots[uid] = {'anyOf': [{'type': 'null'}, use],
                       'description': 'Null means unused; a use object explains artifact decisions informed by this source.'}
-    return transport.object_schema({
+    properties = {
         'artifact': {'type': 'string', 'minLength': 1, 'maxLength': transport.ARTIFACT_LIMIT},
         'source_uses': transport.object_schema(slots),
-        'uncertainties': {'type': 'array', 'items': text, 'maxItems': 8}})
+        'uncertainties': {'type': 'array', 'items': text, 'maxItems': 8}}
+    if meaning is not None:
+        properties['meaning_dispositions'] = meaning.disposition_schema(bundle, catalog)
+    return transport.object_schema(properties)
 
 
 def response_receipt(transport, value, stage):
@@ -155,8 +206,9 @@ def owner_source_available(unit):
                     for row in unit.get('messages', []) if isinstance(row, dict)))
 
 
-def validate_writer(transport, value, units):
-    transport.exact_keys(value, ('artifact', 'source_uses', 'uncertainties'))
+def validate_writer(transport, value, units, meaning=None, bundle=None, catalog=None):
+    keys = ('artifact', 'source_uses', 'uncertainties')
+    transport.exact_keys(value, keys + (('meaning_dispositions',) if meaning is not None else ()))
     transport.string(value['artifact'], transport.ARTIFACT_LIMIT)
     if len(value['artifact'].encode()) > transport.ARTIFACT_LIMIT:
         raise InferError('inference-artifact-over-byte-limit')
@@ -181,13 +233,23 @@ def validate_writer(transport, value, units):
         uses.append({'unit_id': uid, **use})
     for text in transport.strings(value['uncertainties'], 8):
         transport.string(text, 4096)
-    return {'artifact': value['artifact'], 'source_basis': basis, 'source_uses': uses,
-            'uncertainties': value['uncertainties'], 'source_limited_proposal': not bool(basis)}
+    result = {'artifact': value['artifact'], 'source_basis': basis, 'source_uses': uses,
+              'uncertainties': value['uncertainties'], 'source_limited_proposal': not bool(basis)}
+    if meaning is not None:
+        result['meaning_dispositions'] = meaning.validate_dispositions(
+            value['meaning_dispositions'], bundle, catalog, value['artifact'])
+    return result
 
 
-def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifact=None):
+def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifact=None, host_meaning=None):
     transport = transport or load_transport()
     compiler = transport.load_compiler()
+    meaning = load_meaning() if getattr(args, 'meaning_check', False) else None
+    direct = getattr(args, 'direct', False)
+    if (host_meaning is not None and (meaning is None or not direct)):
+        raise InferError('meaning-input-conflict')
+    if meaning is not None and direct and host_meaning is None:
+        raise InferError('meaning-direct-bundle-required')
     native_timeout = getattr(args, 'native_timeout', 300)
     if (type(native_timeout) not in (int, float) or not 1 <= native_timeout <= 600
             or type(args.timeout) not in (int, float) or not 1 <= args.timeout <= 120):
@@ -195,7 +257,9 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
     if host_plan is not None and getattr(args, 'direct', False):
         raise InferError('direct-and-provisional-plan-conflict')
     if host_plan is not None:
-        validate_plan(transport, host_plan)
+        validate_plan(transport, host_plan, meaning)
+    if host_meaning is not None:
+        meaning.validate_bundle(host_meaning)
     if current_artifact is not None:
         transport.string(current_artifact, transport.ARTIFACT_LIMIT)
         if len(current_artifact.encode()) > transport.ARTIFACT_LIMIT:
@@ -204,14 +268,20 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
     original_proposals_hash = digest(transport, {'plan': host_plan, 'current_artifact': current_artifact})
     proposals = sanitize({'plan': host_plan, 'current_artifact': current_artifact})
     host_plan, current_artifact = proposals['plan'], proposals['current_artifact']
+    if meaning is not None and host_meaning is not None:
+        host_meaning = sanitize({'meaning': host_meaning})['meaning']
+        meaning.validate_bundle(host_meaning)
     if host_plan is not None:
-        validate_plan(transport, host_plan)
+        validate_plan(transport, host_plan, meaning)
     if current_artifact is not None:
         transport.string(current_artifact, transport.ARTIFACT_LIMIT)
         if len(current_artifact.encode()) > transport.ARTIFACT_LIMIT:
             raise InferError('rendered-current-artifact-over-byte-limit')
     prepared_raw = compiler.prepare_context(args)
     prepared = sanitize(prepared_raw)
+    meaning_input_keys = ('current_request', 'current_native_sources', 'selected_artifact', 'related_artifacts')
+    captured_meaning_hash = (digest(transport, {key: prepared.get(key) for key in meaning_input_keys})
+                             if meaning is not None else None)
     captured_native_hash = digest(transport, prepared['current_native_sources'])
     result = {'version': 1, 'kind': 'continuation-inference', 'status': 'not-delivered',
               'artifact': None, 'objective_success': False, 'owner_acceptance': 'not-established',
@@ -262,17 +332,32 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
         return response
 
     try:
+        catalog = meaning.capture_catalog(prepared, current_artifact) if meaning is not None else None
+        if meaning is not None:
+            result['source_receipt']['meaning_contract'] = {
+                **meaning.catalog_receipt(catalog), 'helper_sha256': MEANING_SHA,
+                'judgment': 'anchors and schema pending; meaning unverified'}
+            if host_plan is not None:
+                validate_plan(transport, host_plan, meaning, catalog)
+            if host_meaning is not None:
+                meaning.validate_bundle(host_meaning, catalog)
         plan = host_plan
         if plan is None and not getattr(args, 'direct', False):
-            response = call('inference_plan', PLAN_RULES,
-                {'current_context': prepared, 'current_artifact_proposal': current_artifact}, plan_schema(transport))
-            plan = validate_plan(transport, sanitize({'plan': response})['plan'])
+            planner_data = {'current_context': prepared, 'current_artifact_proposal': current_artifact}
+            if meaning is not None:
+                planner_data['meaning_handle_catalog'] = meaning.public_catalog(catalog, planner=True)
+            response = call('inference_plan', PLAN_RULES + ('\n' + MEANING_PLAN_RULES if meaning is not None else ''),
+                planner_data, plan_schema(transport, meaning, catalog))
+            plan = validate_plan(transport, sanitize({'plan': response})['plan'], meaning, catalog)
+        meaning_bundle = (plan['meaning'] if plan is not None else host_meaning) if meaning is not None else None
         probes = plan['probes'] if plan is not None else []
         retrieve = bool(args.query or args.unit_id) or (plan is not None and plan['memory_useful'])
         failed_stage, candidate = 'canonical-context', None
         context = sanitize(compiler.retrieve_context(prepared_raw, args, probes, retrieve=retrieve))
         if digest(transport, context['current_native_sources']) != captured_native_hash:
             raise InferError('captured-native-context-changed')
+        if meaning is not None and digest(transport, {key: context.get(key) for key in meaning_input_keys}) != captured_meaning_hash:
+            raise InferError('meaning-captured-context-changed')
         result['source_receipt'].update(
             context_sha256=digest(transport, context), query_plan=transport.query_plan_receipt(context['query_plan']),
             canonical_status=context['canonical_evidence'].get('status'),
@@ -295,22 +380,40 @@ def run_infer(args, transport=None, invoke=None, host_plan=None, current_artifac
                            available_source_units=bundle,
                            source_role_limits={uid: {'owner_attributed_source_available': owner_source_available(unit),
                                 'original_identity_and_adoption_verified': False} for uid, unit in units.items()})
-        written = validate_writer(transport, call('inference_artifact', WRITE_RULES,
-                                  writer_data, writer_schema(transport, units)), units)
+        if meaning is not None:
+            writer_data.update(meaning_bundle=meaning_bundle,
+                               meaning_handle_catalog=meaning.public_catalog(catalog))
+        response = call('inference_artifact', WRITE_RULES + ('\n' + MEANING_WRITE_RULES if meaning is not None else ''),
+                        writer_data, writer_schema(transport, units, meaning, meaning_bundle, catalog))
+        if meaning is not None:
+            response = sanitize({'response': response})['response']
+        written = validate_writer(transport, response, units, meaning, meaning_bundle, catalog)
         result.update(status='draft-produced', artifact=written['artifact'],
                       source_basis=written['source_basis'], uncertainties=written['uncertainties'],
                       source_limited_proposal=written['source_limited_proposal'])
         result['source_receipt'].update(source_uses_sha256=digest(transport, written['source_uses']),
                                         source_use_count=len(written['source_uses']))
+        if meaning is not None:
+            result['source_receipt']['meaning_contract'].update(
+                candidate_count=len(meaning_bundle['candidates']),
+                candidates_sha256=digest(transport, meaning_bundle),
+                dispositions_sha256=digest(transport, written['meaning_dispositions']),
+                disposition_count=len(written['meaning_dispositions']),
+                judgment='anchors and schema validated; meaning unverified')
         if getattr(args, 'include_analysis', False):
             result['private_analysis'] = {'provisional_inference': plan, 'source_uses': written['source_uses'],
                 'classification': 'unverified inference and proposed source use; not owner acceptance'}
+            if meaning is not None:
+                result['private_analysis'].update(meaning_bundle=meaning_bundle,
+                    meaning_dispositions=written['meaning_dispositions'])
     except (InferError, transport.WorkflowError, compiler.ContextError, KeyError, TypeError, ValueError,
             UnicodeError, RecursionError) as error:
         result['error'] = 'inference-stage-or-source-contract-failed'
         result['failed_stage'] = failed_stage
-        code = str(error) if isinstance(error, (InferError, transport.WorkflowError)) else None
-        result['validation_code'] = code if code in VALIDATION_CODES else 'stage-or-source-contract-invalid'
+        code = str(error) if isinstance(error, (InferError, transport.WorkflowError)) or (
+            meaning is not None and isinstance(error, meaning.MeaningError)) else None
+        codes = VALIDATION_CODES | (meaning.VALIDATION_CODES if meaning is not None else frozenset())
+        result['validation_code'] = code if code in codes else 'stage-or-source-contract-invalid'
         if candidate is not None:
             result['invalid_response_receipt'] = candidate
     return result
@@ -329,7 +432,7 @@ def read_input(raw):
     if len(raw) > INPUT_LIMIT:
         raise InferError('inference-input-over-limit')
     value = json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
-    if not isinstance(value, dict) or set(value) - {'cue', 'corrections', 'plan', 'current_artifact'}:
+    if not isinstance(value, dict) or set(value) - {'cue', 'corrections', 'plan', 'current_artifact', 'meaning'}:
         raise InferError('inference-input-schema-invalid')
     return value
 
@@ -349,12 +452,15 @@ def main(argv=None):
     inputs.add_argument('--corrections-stdin', action='store_true')
     inputs.add_argument('--input-stdin', action='store_true', help='Read bounded cue, corrections, plan and artifact JSON from stdin')
     parser.add_argument('--direct', action='store_true', help='Skip planning and implicit archival retrieval for a clear request')
+    parser.add_argument('--meaning-check', action='store_true', help='Validate optional meaning anchors and artifact dispositions; direct mode requires a stdin meaning bundle')
     parser.add_argument('--include-analysis', action='store_true', help='Include provisional inference and proposed source uses on stdout')
     parser.add_argument('--timeout', type=float, default=90)
     parser.add_argument('--native-timeout', type=float, default=300)
     args = parser.parse_args(argv)
     try:
         incoming = read_input(sys.stdin.buffer.read(INPUT_LIMIT + 1)) if args.input_stdin else {}
+        if 'meaning' in incoming and (not args.meaning_check or not args.direct):
+            raise InferError('meaning-input-conflict')
         if 'cue' in incoming:
             if args.cue or not isinstance(incoming['cue'], str):
                 raise InferError('inference-cue-input-conflict')
@@ -364,12 +470,15 @@ def main(argv=None):
                 raise InferError('inference-corrections-input-invalid')
             args.correction.extend(incoming['corrections'])
         result = run_infer(args, transport, host_plan=incoming.get('plan'),
-                           current_artifact=incoming.get('current_artifact'))
+                           current_artifact=incoming.get('current_artifact'), host_meaning=incoming.get('meaning'))
         print(json.dumps(compiler.display_module()(result), ensure_ascii=False, allow_nan=False, separators=(',', ':')))
         return 0 if result['status'] == 'draft-produced' else 1
-    except (ValueError, OSError, TypeError, KeyError, UnicodeError, RecursionError):
-        print(json.dumps({'version': 1, 'kind': 'continuation-inference', 'status': 'not-delivered',
-                          'artifact': None, 'error': 'inference-input-or-context-invalid'}))
+    except (ValueError, OSError, TypeError, KeyError, UnicodeError, RecursionError) as error:
+        failure = {'version': 1, 'kind': 'continuation-inference', 'status': 'not-delivered',
+                   'artifact': None, 'error': 'inference-input-or-context-invalid'}
+        if isinstance(error, InferError) and str(error) in ('meaning-direct-bundle-required', 'meaning-input-conflict'):
+            failure['validation_code'] = str(error)
+        print(json.dumps(failure))
         return 1
 
 
