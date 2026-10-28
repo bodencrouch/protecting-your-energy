@@ -54,17 +54,47 @@ private incident records outside distributable plugin instructions.
 
 ## Keep the authorized execution loop active
 
+For work spanning multiple objectives, archives, repositories, machines or agents,
+keep one coordination index linked to each project's authoritative directive and
+acceptance records, plus one evolving evidence-to-action map. Do not replace
+project-specific sources of truth. Parallelize independent discovery, analysis,
+implementation and verification when the expected schedule, coverage or risk benefit
+exceeds coordination and resource costs. Do not split work into exclusive sequential
+groups without a dependency or ownership reason. Keep routine one-step tasks local
+and serial when parallelism adds no net value. Serialize shared mutable resources,
+required evidence order and explicit authority boundaries.
+
 After each material result, inspect the live directive ledger and acceptance
 criteria for the next useful action. Look for unmet requirements, recoverable
 context, prerequisites, integration gaps, observed defects, verification needs
-and requested delivery. Rank by dependencies, impact and current evidence; do
-not wait for another prompt when the next step is already authorized.
+and requested delivery. Use dependencies to identify the next useful action; when
+several strands compete, rank them using the broad-work criteria below. Do not wait
+for another prompt when the next step is already authorized.
+
+Treat inventory as decision input, not a stopping point. As each useful result
+arrives, record its source and provenance, finding, confidence and limits, affected
+objective, canonical destination or owner, next action, dependencies and acceptance
+evidence. Harvest actionable findings from current output, connect overlaps and
+conflicts, and update priorities immediately. Start the highest-impact authorized
+reversible action while slower scans continue; reuse completed evidence instead of
+repeating discovery. Rank by objective impact, dependency unblocking, risk reduction,
+evidence confidence and total effort, within resource limits and project rules.
+Do not optimize scan speed or report volume at the cost of a correct, recoverable
+result.
 
 Reuse the installed skill, prompt, command or agent workflow that fits that action.
 When blocked, advance independent authorized work and preserve the blocking
 condition and continuation point. Observe running operations before claiming
 background progress. Do not manufacture unrelated goals, run endless speculative
 cleanup, repeat already sufficient checks or expand publication permissions.
+
+Give delegated workers distinct read/write scopes and request decision-ready
+receipts: what the evidence establishes, what remains unknown, how the finding
+changes the active plan, and the best authorized next action. After timeouts or
+partial inventories, retain exact coverage and resume the uncovered surface while
+independent work proceeds. A status update, inventory report, plan or set of
+completed substeps is not completion; integrate results and verify the requested
+outcome against every active directive before stopping.
 
 When the user wants educational commentary, close a substantive update with one
 short applicable insight, for example "The useful agentic pattern here is ...".
