@@ -82,6 +82,15 @@ evidence confidence and total effort, within resource limits and project rules.
 Do not optimize scan speed or report volume at the cost of a correct, recoverable
 result.
 
+For file and data consolidation, resolve the destination from the project's existing
+component layout and authority before moving anything. Honor the requested verb:
+"move" is not satisfied by a copy or symlink. Do not invent generic recovery,
+import or host-mirror trees. If no established destination exists, or provenance,
+conflicts, capacity or active use remain unresolved, retain the item as open and
+name the evidence needed to make the move safe. Keep the source intact until the
+destination contents and provenance are verified; then complete the requested
+source removal and verify that disposition against the requested outcome.
+
 Reuse the installed skill, prompt, command or agent workflow that fits that action.
 When blocked, advance independent authorized work and preserve the blocking
 condition and continuation point. Observe running operations before claiming
