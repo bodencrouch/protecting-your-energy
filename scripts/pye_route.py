@@ -228,7 +228,7 @@ def choose_route(cue: str, requested: str) -> tuple[str, str, dict[str, int]]:
         return "reclaim", "default", scores
     # Stable order follows HINTS, so equal signals do not fluctuate between runs.
     selected = next(name for name in HINTS if scores[name] == best)
-    return selected, "semantic-hint", scores
+    return selected, "lexical-hint", scores
 
 
 def parse_json_input(raw: bytes) -> dict:
