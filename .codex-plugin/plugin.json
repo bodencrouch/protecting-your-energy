@@ -1,20 +1,20 @@
 {
   "name": "protecting-your-energy",
-  "version": "0.2.1+codex.20260910205000",
-  "description": "Protecting Your Energy helps AI users spend less attention repairing avoidable agent mistakes, while keeping every personalization rule opt-in.",
+  "version": "0.3.2",
+  "description": "Recover reasoning, express it clearly, choose useful work and surface relevant opportunities while preserving continuity.",
   "author": {
     "name": "Local developer"
   },
   "skills": "./skills/",
   "interface": {
-    "displayName": "Protecting Your Energy",
-    "shortDescription": "Reduce AI busywork, re-asking, and unfinished follow-through.",
-    "longDescription": "A consent-first agent companion for reducing the energy users lose to repeated clarification, dropped context, premature stopping, and weak verification. It studies interaction friction, proposes scoped response policies, and asks before enabling them.",
+    "displayName": "Protect Your Energy",
+    "shortDescription": "Turn accumulated thinking into useful next results.",
+    "longDescription": "Reclaim ideas, express them for the current audience, choose the next action, reassess overruns and notice verified opportunities. Keep evidence and resumption state private.",
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [],
     "defaultPrompt": [
-      "Finish the requested deliverable. Suggest opt-in effort-saving policies only when asked."
+      "Use Protect Your Energy to recover what I mean and complete the next useful result."
     ]
   }
 }
