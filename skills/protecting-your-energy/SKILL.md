@@ -9,6 +9,26 @@ Deliver the useful result the owner is trying to reach. Recover the problem,
 meaning and constraints before choosing a mechanism. Existing tools, profiles
 and popular methods are candidates, not definitions of the need.
 
+## Sustain momentum during the work
+
+Whenever this route investigates earlier conversations or continues substantial
+work, apply [sustain-momentum](../sustain-momentum/SKILL.md) lightly alongside
+the needed capability. Recover repeated priorities and successful conditions,
+including efficient workflows and low interaction cost. Investigate “obviously”
+as a possible missed expectation; promote only supported, scoped improvements
+and evaluate changed skills. Keep this upkeep behind useful delivery.
+
+## Select the execution workflow
+
+For substantial work and phase transitions, apply
+[workflow-orchestration](../workflow-orchestration/SKILL.md): recover active
+directives, select and use the applicable installed expert workflow, and keep
+looking for the next authorized action until the requested outcome is delivered.
+Use [policy placement](../../references/policy-placement.md) when deciding whether
+an improvement belongs in a rule, hook, memory or reusable procedure. Explicit
+user instructions authorize their stated scope; consent for inferred preferences
+does not require asking again about already authorized work.
+
 ## Route the work
 
 Use only the responsibilities the current request needs:

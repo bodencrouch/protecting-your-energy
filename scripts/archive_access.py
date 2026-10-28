@@ -44,6 +44,149 @@ ORIGINAL_RESOLVER = TOOLING / 'discord_capture_resolver.py'
 ORIGINAL_RESOLVER_SHA = '409abf482adb9fa3d68865c049730a3c3e1ada002fc641b22b2daab11bb61207'
 NOTE_CAPTURE_READER = Path(__file__).with_name('note_capture_reader.py')
 NOTE_CAPTURE_READER_SHA = '14ddd190bf0b096ceaa3707fb39a5c9b0f61b4267ad108071090b9c2bd6b7334'
+KNOWLEDGE_BOOTSTRAP = "import runpy,sys; from pathlib import Path; helper=sys.argv[1]; sys.path.insert(0,str(Path(helper).parent)); sys.argv=sys.argv[1:]; runpy.run_path(helper,run_name='__main__')"
+
+
+def knowledge_run(argv: list[str], payload: bytes, seconds: float, env: dict, cap: int = 1048576) -> dict:
+    started = time.monotonic()
+    proc = subprocess.Popen(argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, start_new_session=True)
+    selector = selectors.DefaultSelector()
+    streams = {'out': bytearray(), 'err': bytearray()}
+    reason = None
+    sent = 0
+    for stream, event, name in ((proc.stdin, selectors.EVENT_WRITE, 'in'),
+                                 (proc.stdout, selectors.EVENT_READ, 'out'),
+                                 (proc.stderr, selectors.EVENT_READ, 'err')):
+        os.set_blocking(stream.fileno(), False)
+        selector.register(stream, event, name)
+    try:
+        while selector.get_map():
+            remaining = seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                reason = 'external-timeout'
+                break
+            for key, _ in selector.select(min(remaining, 0.1)):
+                if key.data == 'in':
+                    try:
+                        sent += os.write(key.fd, payload[sent:sent + 8192])
+                    except BrokenPipeError:
+                        sent = len(payload)
+                    except BlockingIOError:
+                        continue
+                    if sent == len(payload):
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                else:
+                    try:
+                        data = os.read(key.fd, 8192)
+                    except BlockingIOError:
+                        continue
+                    if not data:
+                        selector.unregister(key.fileobj)
+                        continue
+                    available = cap - sum(map(len, streams.values()))
+                    streams[key.data].extend(data[:available])
+                    if len(data) > available:
+                        reason = 'output-cap'
+                        break
+            if reason:
+                break
+        if not reason:
+            try:
+                proc.wait(timeout=max(0.001, seconds - (time.monotonic() - started)))
+            except subprocess.TimeoutExpired:
+                reason = 'external-timeout'
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        selector.close()
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            stream.close()
+    return {'exit_code': proc.returncode, 'failure': reason,
+            'stdout': bytes(streams['out']).decode('utf-8', 'strict')}
+
+
+def knowledge(args) -> dict:
+    config_path = Path(args.config).expanduser()
+    config = json.loads(config_path.read_text()) if config_path.is_file() else {}
+    options = config.get('knowledge', {})
+    if not isinstance(options, dict):
+        raise ValueError('knowledge configuration must be an object')
+    keys = ('helper', 'helper_sha256', 'python', 'base', 'web_generation', 'discord_generation')
+    options = {key: os.environ.get('PYE_KNOWLEDGE_' + key.upper(), options.get(key)) for key in keys}
+    if any(not isinstance(options[key], str) or not options[key].strip() for key in keys):
+        return {'ok': False, 'status': 'knowledge-unavailable', 'failure': 'knowledge-not-configured'}
+    paths = {key: Path(options[key]).expanduser() for key in keys if key != 'helper_sha256'}
+    if any(not value.is_absolute() for value in paths.values()):
+        raise ValueError('knowledge configuration paths must be absolute')
+    if not re.fullmatch(r'[0-9a-f]{64}', options['helper_sha256']):
+        raise ValueError('knowledge helper SHA256 must contain 64 lowercase hex characters')
+    for key in ('web_generation', 'discord_generation'):
+        if guarded(paths[key]) or not paths[key].is_dir():
+            raise ValueError('knowledge generation unavailable or guarded')
+    knowledge_helper = paths['helper']
+    knowledge_python = paths['python']
+    knowledge_base = paths['base']
+    if not 1 <= args.limit <= 20 or not 1 <= args.budget <= 60:
+        raise ValueError('limit 1–20 and budget 1–60 required')
+    query_text = args.query or ''
+    if len(query_text) > 2048 or (args.mode != 'metadata' and not query_text.strip()):
+        raise ValueError('query of 1–2048 characters required except in metadata mode')
+    for values in (args.source, args.host):
+        if len(values) > 32 or any(not value or len(value) > 200 for value in values):
+            raise ValueError('source and host accept up to 32 filters of 1–200 characters')
+    if guarded(knowledge_helper) or not knowledge_helper.is_file():
+        raise ValueError('knowledge helper unavailable or guarded')
+    if hashlib.sha256(knowledge_helper.read_bytes()).hexdigest() != options['helper_sha256']:
+        raise ValueError('knowledge helper SHA256 differs')
+    if guarded(knowledge_python) or not knowledge_python.is_file():
+        raise ValueError('knowledge runtime unavailable or guarded')
+    if guarded(knowledge_base) or not knowledge_base.is_dir():
+        raise ValueError('knowledge generations unavailable or guarded')
+    temp = knowledge_base / 'query-tmp'
+    if temp.is_symlink():
+        raise ValueError('knowledge temporary directory cannot be a symlink')
+    temp.mkdir(mode=0o700, exist_ok=True)
+    info = temp.stat()
+    if not temp.is_dir() or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        raise ValueError('knowledge temporary directory must be private and owned')
+    env = os.environ.copy()
+    env.update({'PYTHONDONTWRITEBYTECODE': '1', 'HF_HUB_OFFLINE': '1',
+                'TRANSFORMERS_OFFLINE': '1', 'HF_DATASETS_OFFLINE': '1',
+                'TOKENIZERS_PARALLELISM': 'false', 'TMPDIR': str(temp), 'SQLITE_TMPDIR': str(temp)})
+    payload = json.dumps({'query': query_text, 'mode': args.mode, 'limit': args.limit,
+                          'source': args.source, 'host': args.host}, ensure_ascii=False).encode('utf-8')
+    if len(payload) > 65536:
+        raise ValueError('knowledge request exceeds byte limit')
+    run = knowledge_run([str(knowledge_python), '-I', '-B', '-c', KNOWLEDGE_BOOTSTRAP, str(knowledge_helper),
+                         '--web-generation', str(paths['web_generation']),
+                         '--discord-generation', str(paths['discord_generation'])],
+                        payload, args.budget, env)
+    if run['failure']:
+        return {'ok': False, 'status': 'knowledge-unavailable', 'failure': run['failure']}
+    def pairs_unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate knowledge response field')
+            result[key] = value
+        return result
+    def invalid_constant(value):
+        raise ValueError('nonfinite knowledge response number')
+    try:
+        result = json.loads(run['stdout'], object_pairs_hook=pairs_unique, parse_constant=invalid_constant)
+    except RecursionError:
+        raise ValueError('knowledge response nesting exceeds decoder limit') from None
+    if not isinstance(result, dict) or type(result.get('ok')) is not bool:
+        raise ValueError('invalid knowledge response')
+    if result['ok'] and (run['exit_code'] != 0 or not isinstance(result.get('generations'), list)
+                         or (args.mode != 'metadata' and not isinstance(result.get('hits'), list))):
+        raise ValueError('invalid knowledge success response')
+    return result
 
 
 def guarded(path: Path) -> bool:
@@ -1629,6 +1772,10 @@ class DisplayArgumentParser(argparse.ArgumentParser):
 def main() -> int:
     ap = DisplayArgumentParser(description=__doc__); ap.add_argument('--config', default=str(DEFAULT_CONFIG))
     sub = ap.add_subparsers(dest='command', required=True); sub.add_parser('status')
+    k = sub.add_parser('knowledge', help='Retrieve captured community knowledge')
+    k.add_argument('--query'); k.add_argument('--mode', choices=('metadata', 'lexical', 'semantic', 'hybrid'), default='hybrid')
+    k.add_argument('--source', action='append', default=[]); k.add_argument('--host', action='append', default=[])
+    k.add_argument('--limit', type=int, default=5); k.add_argument('--budget', type=float, default=20)
     c = sub.add_parser('catalog'); c.add_argument('--query'); c.add_argument('--limit', type=int, default=10); c.add_argument('--offset', type=int, default=0)
     q = sub.add_parser('query'); q.add_argument('--query', action='append', required=True)
     q.add_argument('--source-prefix', help='Optional original subtree for the path fallback'); q.add_argument('--year'); q.add_argument('--platform'); q.add_argument('--limit', type=int, default=5)
@@ -1647,6 +1794,10 @@ def main() -> int:
     h.add_argument('--source-sha256'); h.add_argument('--version'); h.add_argument('--context', type=int, default=3); h.add_argument('--max-chars', type=int, default=8000)
     args = ap.parse_args()
     try:
+        if args.command == 'knowledge':
+            result = knowledge(args)
+            print(json.dumps(display_result(result), ensure_ascii=False, separators=(',', ':')))
+            return 0 if result.get('ok') is True else 2
         st = settings(args.config)
         if args.command == 'status': result = status(st)
         elif args.command == 'catalog':

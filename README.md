@@ -12,8 +12,18 @@ $protect-your-energy <what you are trying to do>
 
 Ordinary requests work too. You do not need to choose a skill or prepare keywords.
 
+This is the `protecting-your-energy` plugin (displayed as Protect Your Energy).
+A marketplace is the catalog that distributes plugins. `$workflow-orchestration`
+selects installed expert capabilities for the current project phase and continues
+through remaining authorized work. [Policy placement](references/policy-placement.md)
+explains rules, hooks, memory and skills. Portable skills are included here; host
+hook installation is a separate, explicit integration.
+
 ## Capabilities
 
+- `workflow-orchestration`: select authoritative workflows and keep the authorized execution loop active.
+- `background-missions`: retain authorized background work with owned execution and independent review.
+- `sustain-momentum`: preserve active goals and useful progress across waits and corrections.
 - `reasoning-map`: recover implicit goals, causal connections and reusable methods.
 - `choose-next`: select a useful action from goals, readiness and remaining effort.
 - `finish-loop`: reassess expanding work and preserve the requested result.
@@ -68,3 +78,11 @@ context needed for their purpose and preserve material limitations.
 The original WXYZ work remains in `research/`: observed signal, interaction cost,
 protected method and useful result. The broader workflow now acts on the user's
 requested outcome, while preserving privacy and easy correction.
+
+## Execution adapters
+
+[Unified routing](references/unified-route.md) describes the optional `pye_route.py`
+adapter over the existing continuation drafter; lexical routing hints remain
+provisional. [Mission runtime](references/mission-runtime.md) documents the local
+mission queue and its actual scheduling requirements. Neither a skill invocation
+nor an accepted queue item establishes running background execution.
