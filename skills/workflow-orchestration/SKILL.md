@@ -13,7 +13,11 @@ do not load skills solely to demonstrate activity.
 1. Recover the intended outcome, every current request and constraint, prior active
    directives, project authority, and evidence already available. Follow-ups add or
    steer work unless the user explicitly cancels, pauses or replaces it. Resolve
-   unclear referents from accessible context before interpreting them.
+   unclear referents from accessible context before interpreting them. For
+   historical or comprehensive requests, do this before paraphrasing the request
+   or listing assumptions. A hook or prompt that requires a pre-tool rewrite does
+   not override context recovery or the user's actual directive; show a rewritten
+   prompt only when the user asks for one.
    For repository work, inspect dirty files and unpublished commits, recover their
    purpose and ownership, and include coherent unfinished work in the delivery
    queue. Use separate commits or branches where helpful; preserve other owners'
@@ -104,6 +108,9 @@ partial inventories, retain exact coverage and resume the uncovered surface whil
 independent work proceeds. A status update, inventory report, plan or set of
 completed substeps is not completion; integrate results and verify the requested
 outcome against every active directive before stopping.
+If a requested source is inaccessible or only partly covered, name that source and
+the exact boundary, keep it open in the evidence-to-action map, and continue other
+authorized sources that can still advance the task.
 
 When the user wants educational commentary, close a substantive update with one
 short applicable insight, for example "The useful agentic pattern here is ...".
