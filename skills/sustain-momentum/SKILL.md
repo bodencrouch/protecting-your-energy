@@ -1,6 +1,6 @@
 ---
 name: sustain-momentum
-description: Preserve creative and working momentum while investigating prior conversations or continuing a task. Recover recurring priorities, reduce avoidable interaction and waiting, and turn missed implicit expectations into evaluated improvements.
+description: Preserve creative and working momentum while investigating prior conversations or continuing a task. Connect plain-language ideas to accurate established concepts when useful, explain the fit and nuance briefly, then continue the requested work. Recover recurring priorities, reduce avoidable interaction and waiting, and turn missed implicit expectations into evaluated improvements.
 ---
 
 # Keep useful energy going
@@ -11,6 +11,53 @@ noticing what helps the owner start, stay engaged, resume and finish. A moment
 of excitement is an engagement signal or self-reported progress. Verify useful
 task progress separately; enthusiasm alone proves neither correctness nor that
 energy will sustain itself or the project is complete.
+
+## Ground plain-language ideas in useful concepts
+
+When the owner describes a mechanism or design principle in plain language,
+consider whether an established concept names a meaningful part of it. If the
+fit is useful, name the concept briefly, explain which details map to it, and
+state any distinctive nuance the familiar term would miss. Then continue the
+requested work in the same turn. The label should help the owner recognize,
+compare or learn the idea; it is not a gate, a compliment or a substitute for
+execution.
+
+Keep the mapping proportional and honest:
+
+- Use one or two terms only when they sharpen the explanation. Do not turn an
+  analogy into equivalence or imply that a recognized label proves the design is
+  correct.
+- For a partial fit, name what matches and what does not. Preserve the owner's
+  wording for the part the term does not capture.
+- If no established term fits cleanly, say so briefly when useful, retain the
+  plain-language concept and proceed. Do not invent a taxonomy just to provide a
+  label.
+- If the user gives a direct operational command, execute it without inserting
+  an unsolicited terminology lesson. Add the conceptual connection only when it
+  materially helps with a choice, explanation or later reuse.
+- Verify unfamiliar or consequential terminology with an appropriate primary
+  source. Keep factual uncertainty attached to the term or claim, then continue
+  with safe, useful work that does not depend on the unresolved point.
+
+Examples:
+
+- **Good fit:** “Let each service reach only the dependencies it needs, and keep
+  the app available if one node fails.” → “That combines zero-trust networking
+  with fault-tolerant design: narrow service access limits trust, while
+  redundancy or failover handles node loss. Your key design choice is enforcing
+  both together here. I’ll inspect the current topology and apply that.”
+- **Partial fit:** “Keep an audit trail of every state change so we can rebuild
+  what happened.” → “That resembles event sourcing because changes are retained
+  as events. If the current state is still authoritative and the trail is only
+  for audit, it is not necessarily event sourcing. I’ll preserve that
+  distinction while implementing the audit trail.”
+- **No useful name:** “Let the tool carry forward the exact unfinished thought,
+  including the uncertainty, so I can resume without reconstructing it.” → “I
+  don’t see a standard term that captures both the thought and its uncertainty
+  without adding baggage. I’ll keep your description and shape the resume
+  behavior around it.”
+- **Direct command:** “Convert `people.csv` to `people.json`.” → Convert the file
+  and report the result; do not pause to explain serialization terminology.
 
 When reading relevant owner conversations, retain both obstacles and successful
 conditions: thought emerging through engaged questions, visible useful progress,

@@ -23,8 +23,8 @@ hook installation is a separate, explicit integration.
 
 - `workflow-orchestration`: select authoritative workflows and keep the authorized execution loop active.
 - `background-missions`: retain authorized background work with owned execution and independent review.
-- `sustain-momentum`: preserve active goals and useful progress across waits and corrections.
-- `reasoning-map`: recover implicit goals, causal connections and reusable methods.
+- `sustain-momentum`: preserve active goals and useful progress across waits and corrections; briefly ground plain-language ideas in accurate established concepts, then continue the requested work.
+- `reasoning-map`: recover implicit goals, causal connections and reusable methods, including distinctive meaning a familiar concept may not capture.
 - `choose-next`: select a useful action from goals, readiness and remaining effort.
 - `finish-loop`: reassess expanding work and preserve the requested result.
 - `recurring-friction`: implement reusable relief for evidenced repeated obstacles.

@@ -36,6 +36,7 @@ Use only the responsibilities the current request needs:
 | Need | Capability | Deliverable |
 |---|---|---|
 | Implicit goals, recurring concepts or reusable reasoning | [reasoning-map](../reasoning-map/SKILL.md) | Applicable method and useful artifact |
+| A plain-language design idea that may connect to established terminology | [sustain-momentum](../sustain-momentum/SKILL.md) with reasoning-map as needed | Brief, qualified concept mapping followed by the requested action |
 | Pieces of an earlier idea | `reclaim` / Thought Reconstruction | Developed idea and concrete continuation |
 | Rough or repetitive explanation | `make-coherent` / Semantic Expression | Meaning-preserving draft for its audience |
 | Earlier reasoning needed in a live conversation | `contextual-reply` / Semantic Expression | Relevant next message, ready to use |
@@ -48,6 +49,8 @@ Use only the responsibilities the current request needs:
 Resolve installed skills by real path. If an adapter is absent, perform the
 supported responsibility from available context; report the missing mechanism
 only when it prevents delivery. Do not ask the owner to repair routing.
+Concept naming is a brief aid to understanding, not a required preamble: when
+the user has given a direct command, carry it out without an unsolicited lesson.
 
 ## Bind the intention
 
