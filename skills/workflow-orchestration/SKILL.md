@@ -86,6 +86,13 @@ evidence confidence and total effort, within resource limits and project rules.
 Do not optimize scan speed or report volume at the cost of a correct, recoverable
 result.
 
+Keep evidence emission bounded independently of source coverage. Preserve complete
+inventories and raw receipts in their authorized private locations, but bring only
+counts, hashes, bounded samples and actionable deltas into the working context.
+Filter at the source and read relevant slices on demand; never stream whole archives,
+conversation dumps or tool catalogs. Record truncation and exact coverage so output
+limits do not become an excuse to omit sources or findings.
+
 For file and data consolidation, resolve the destination from the project's existing
 component layout and authority before moving anything. Honor the requested verb:
 "move" is not satisfied by a copy or symlink. Do not invent generic recovery,
